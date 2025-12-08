@@ -1,15 +1,54 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { fetchCardById, searchCards } from './card-data-services/index.js';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+
+import { pokemonAPI, APIObserver } from './card-data-services/api/APIClient';
+import { searchCards } from './card-data-services/search-service/SearchIndex';
+import { QuerySanitizer } from './card-data-services/search-service/SearchIndex';
+
+//import logging and observers
+import { LoggingObserver, ErrorTrackingObserver } from './card-data-services/api/APIClient';
+
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+/*
+    Security Middleware
+*/
+
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || '',
+    credentials: true
+}));
+
 app.use(express.json());
+
+/**
+ * 
+ *  Rate limiting
+ */
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, //15 minutes
+    max: 100, //limit to 100 per ip
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests from this IP try again later'
+});
+
+//rate limit to api routes
+app.use('/api/', limiter);
+
+/*
+    Observer setup
+*/
+
+
 
 // ROUTES
 

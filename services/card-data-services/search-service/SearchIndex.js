@@ -2,7 +2,7 @@ import { pokemonAPI } from "../api/APIClient";
 
 //Query Sanitization to prevent any sort of attacks on the system
 
-class QuerySanitizer{
+export class QuerySanitizer{
     static sanitizeString(input){
         if(typeof input !== 'string'){
             return '';

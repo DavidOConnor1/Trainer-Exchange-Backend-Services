@@ -130,27 +130,67 @@ const validateSearchQuery = (req, res, next) => {
 
 // ROUTES
 
-//fetch card via ID 
-app.get("/api/cards/:id", async (req, res) => {
-    try{
-        const card = await fetchCardById(req.params.id);
-        res.json(card);
-    } catch(err) {
-        res.status(500).json({error: err.message});
-    }
+//Checking if the API is healthy
+app.get('/health', (req,res) => {
+   res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    service: 'Pokemon TCG API GATEWAY'
+   })
 });
 
-//search cards by name
-app.get("/api/cards/search", async(req,res) => {
-    try{
-        const query = req.query.q;
-        const results = await searchCards(query);
-        res.json(results);
-    } catch(err) {
-        res.status(500).json({error: err.message});
-    }
+//api status endpoint
+app.get('/api/status', (req, res) => {
+     const apiCallLog = pokemonAPI.getAPICallLog();
+    const errors = errorTracking.getErrors();
+
+    res.json({
+        success: true,
+        data: {
+            uptime: process.uptime(),
+            apiCalls: apiCallLog.length,
+            recentErrors: errors.slice(-10),
+            cacheHits: apiCallLog.filter(log => log.status === 'sucess').length,
+            lastApiCall: apiCallLog[apiCallLog.length -1]
+        }
+    });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running at http://localhost:${PORT}`);
+//fetches card by id 
+app.get("/api/cards/:id", validateCardId, async(req,res) => {
+    try{
+        const cardId = req.sanitizedId;
+
+        if(!cardId){
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid card id after sanitization'
+            });
+        }//end if
+
+        const card = await pokemonAPI.fetchCardById(cardId);
+
+        if(!card) {
+            return res.status(404).json({
+                success: false,
+                error: 'Card not found'
+            });
+        } //end if
+        
+        res.json({
+            success: true,
+            data: card,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch(err) {
+        console.error(`error fetching card ${req.params.id}: `,err);
+
+        res.status(500).json({
+            success: false,
+            error: 'failed to fetch card',
+            message: err.message,
+            cardId: req.params.id
+        });
+    }
 });

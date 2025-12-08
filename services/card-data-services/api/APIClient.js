@@ -224,7 +224,22 @@ class ErrorTrackingObserver{
     }
 }//end error tracking observer
 
+//export singleton instance
+export const pokemonAPI = pokemonAPI.getInstance();
 
+//exports observer
+export const APIObserver = pokemonAPI.observer;
+
+//export observer classes for external use
+export {LoggingObserver, ErrorTrackingObserver};
+
+export async function fetchCardById(cardId) {
+    return pokemonAPI.fetchCardById(cardId);
+}
+
+export async function fetchCards(params = {}) {
+    return pokemonAPI.fetchCards(params);
+}
 
 
 

@@ -156,15 +156,52 @@ async  fetchCards(params = {}){
     };
 
     //retrive api call history
-    getAPICallLog(){
-        return Array.from(this.apiCallLog.entries()).map(([id, data])) => ({
-            id,
-            ...data
-        }));
+    getAPICallLog() {
+    return Array.from(this.apiCallLog.entries()).map(([id, data]) => ({
+      id,
+      ...data
+    }));
+  }
+
+  //get specific call details
+  getCallDetails(callId){
+    return this.apiCallLog.get(callId);
+  }
+
+  //clear cache
+  clearCache() {
+    this.cache.clear();
+    PokemonAPI.observer.notify('cacheCleared', {
+        timestamp: new Date().toISOString(),
+        cacheSize: 0
+    });
+  }
+
+  //clears api call log
+  clearCallLog(){
+    this.apiCallLog.clear();
+  }
+} //end pokemonAPI
+
+//observers for monitoring
+class LoggingObserver {
+    apiCallStart(data) {
+        console.log(`[${data.timestamp}] API call started: ${data.endpoint}`);
     }
-    
-   
-}
+
+    apiCallSuccess(data){
+        console.log(`[${data.timestamp}] API call successful: ${data.endpoint} (${data.dataLength} items)`);
+    }
+    apiCallError(data){
+        console.error(`[${data.timestamp}] API call failed: ${data.endpoint} - ${data.error}`);
+    }
+
+    cacheHit(data){
+        console.log(`[${data.timestamp}] Cache Hit: ${data.endpoint}`);
+    }
+}//emd logging observer
+
+
 
 
 

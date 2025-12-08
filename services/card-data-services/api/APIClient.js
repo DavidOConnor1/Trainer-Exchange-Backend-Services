@@ -64,42 +64,108 @@ class PokemonAPI {
         }
 
         //logs api call 
-        
-    }
+        const callId = Date.now();
+        this.apiCallLog.set(callId, {
+            endpoint: url,
+            timestamp: new Date().toISOString(),
+            status: 'pending'
+        });
 
+        PokemonAPI.observer.notify('apiCallStart', {
+            callId,
+            endpoint: url,
+            timestamp: new Date().toISOString()
+        });
+
+        try{ //open try
+            const res = await fetch(url, {
+                headers: HEADERS,
+            });
+
+            if(!res.ok){
+                const errorData = {
+                    callId,
+                    endpoint: url,
+                    status: res.status,
+                    timestamp: new Date().toISOString()
+                };
+                this.apiCallLog.set(callId, {
+                    ...this.apiCallLog.get(callId),
+                    status: 'error',
+                    error: `HTTP ${res.status}`,
+                    response: null
+                });
+
+                PokemonAPI.observer.notify('apiCallError', errorData);
+                throw new Error(`Failed to fetch: ${res.status}`);
+            }
+
+            const data = await res.json();
+            const responseData = data.data || data;
+
+            //update log with success
+            this.apiCallLog.set(callId, {
+                ...this.apiCallLog.get(callId),
+                status: 'success',
+                response: responseData,
+                completedAt: new Date().toISOString()
+            });
+
+            //cache response
+            this.cache.set(cacheKey, responseData);
+
+            PokemonAPI.observer.notify('apiCallSuccess', {
+                callId,
+                endpoint: url,
+                timestamp: new Date.toISOString(),
+                dataLength: Array.isArray(responseData) ? responseData.length : 1
+            });
+
+            return responseData;
+
+        }//end try
+        catch(error){
+            const errorData = {
+                callId,
+                endpoint: url,
+                error: error.message,
+                timestamp: new Date().toISOString()
+            };
+
+            this.apiCallLog.set(callId, {
+                ...this.apiCallLog.get(callId),
+                status: 'error',
+                error: error.message
+            });
+
+            PokemonAPI.observer.notify('apiCallError: ', errorData);
+            throw error;
+        }
+    }//end make request
+
+//fetch a single card by its id
+ async fetchCardById(cardId) {
+    const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards/${cardId}`;
+    return this.makeRequest(endpoint);      
+ };
+
+ //fetching multiple cards with query parameters
+async  fetchCards(params = {}){
+    const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards`;
+    return this.makeRequest(endpoint, params); 
+    };
+
+    //retrive api call history
+    getAPICallLog(){
+        return Array.from(this.apiCallLog.entries()).map(([id, data])) => ({
+            id,
+            ...data
+        }));
+    }
+    
    
 }
 
-//fetch a single card by its id
-export async function fetchCardById(cardId) {
-    const res = await fetch(`${POKEMON_TCG_API_BASE_URL}/cards/${cardId}`,{
-        headers: HEADERS,
-    });
 
-    //if the res is not okay throw error
-    if(!res.ok){
-        throw new Error(` Failed to fetch card: ${res.status}`);
-    }
-    
-    const data = await res.json();
-    return data.data; //the data will be wrapped in {data {...}}
 
-}
 
-//fetching multiple cards with query parameters
-
-export async function fetchCards(params = {}){
-    const query = new URLSearchParams(params).toString();
-    const res = await fetch(`${POKEMON_TCG_API_BASE_URL}/cards?${query}`, {
-        headers:HEADERS,
-    });
-
-    //if res not okay, throw error
-    if(!res.ok){
-        throw new Error(`Failed to fetch cards: ${res.status}`);
-    }
-
-    //returns data if successful
-    const data = await res.json();
-    return data.data;
-}

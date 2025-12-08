@@ -201,6 +201,29 @@ class LoggingObserver {
     }
 }//emd logging observer
 
+//error tracker for the observer
+
+class ErrorTrackingObserver{
+    constructor(){
+        this.errors = [];
+    }
+
+    apiCallError(data){
+        this.errors.push({
+            ...data,
+            type: 'API_ERROR'
+        });
+    }
+
+    getErrors(){
+        return this.errors;
+    }
+
+    clearErrors(){
+        this.errors = [];
+    }
+}//end error tracking observer
+
 
 
 

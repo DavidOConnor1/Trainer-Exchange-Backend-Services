@@ -25,6 +25,51 @@ class APIObserver {
     }
 }
 
+//singleton 
+
+class PokemonAPI {
+    static instance = null;
+    static observer = new APIObserver();
+
+    constructor(){
+        if(PokemonAPI.instance){
+            return PokemonAPI.instance;
+        }
+    this.apiCallLog = new Map(); //tracks calls by the endpoint
+    this.cache = new Map(); //cache responses to prevent duplicate calls
+    PokemonAPI.instance = this;
+    }
+
+    static getInstance(){
+        if(!PokemonAPI.instance){
+            PokemonAPI.instance = new PokemonAPI();
+        }
+        return PokemonAPI.instance;
+    }
+
+    async makeRequest(endpoint, params = null){
+        const url = params
+        ?`${endpoint}?${new URLSearchParams(params).toString()}`
+        : endpoint;
+
+        const cacheKey = url;
+
+        //checks cache first
+        if(this.cache.has(cacheKey)){
+            PokemonAPI.observer.notify('cacheHit', {
+                endpoint: url,
+                timestamp: new Date().toISOString()
+            });
+            return this.cache.get(cacheKey);
+        }
+
+        //logs api call 
+        
+    }
+
+   
+}
+
 //fetch a single card by its id
 export async function fetchCardById(cardId) {
     const res = await fetch(`${POKEMON_TCG_API_BASE_URL}/cards/${cardId}`,{

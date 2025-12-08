@@ -103,5 +103,26 @@ if(typeof params === 'object' && params !== null){
 //invalid input, return nothing
 console.warn('invalid search params: ',params);
 return[];
-    
-}
+}//end search
+
+//helps with paginated searches
+
+export async function searchCardsPaginated(params, page = 1, pageSize = 20){
+    const searchParams = typeof params === 'string'
+    ? {q: `name:${QuerySanitizer.validateCardName(params) || ''}*`}
+    : QuerySanitizer.sanitizeQueryObjects(params);
+
+    return searchCards({
+        ...searchParams,
+        page: Math.max(1, page),
+        pageSize: Math.min(100, Math.max(1, pageSize))
+    });
+}//end function
+
+///get total amount of cards for matching search
+
+export async function getSearchCount(params) {
+    const cards = await searchCards(params);
+    return cards.length;
+}//end function
+

@@ -48,7 +48,49 @@ app.use('/api/', limiter);
     Observer setup
 */
 
+const loggingObserver = new LoggingObserver();
+const errorTracking = new ErrorTrackingObserver();
 
+APIObserver.subscribe(loggingObserver);
+APIObserver.subscribe(errorTracking);
+
+//middle ware to track all requests
+const requestMonitor = (req, res, next) => {
+    const startTime = Date.now();
+
+    //log request
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} from ${req.ip}`);
+
+    //monitor response
+    res.on('finish', () => {
+        const duration = Date.now() - startTime;
+        console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+
+        //track errors
+        if(res.statusCode >= 400){
+            APIObserver.notify('apiCallError', {
+                endpoint: req.url,
+                method: req.method,
+                status: res.statusCode,
+                duration,
+                ip: req.ip,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+    next();
+}; //end request monitor
+
+app.use(requestMonitor);
+
+/*
+    Input validation middle ware
+*/
+
+//validation for card id
+const validateCardId = (req, res, next) => {
+    
+}
 
 // ROUTES
 

@@ -89,8 +89,44 @@ app.use(requestMonitor);
 
 //validation for card id
 const validateCardId = (req, res, next) => {
-    
-}
+    const cardId = req.params.id;
+
+    if(!cardId || typeof cardId !== 'string'){
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid Card ID'
+        });
+    }//end if 
+
+    //sanitize card id
+    const sanitizedId = QuerySanitizer.sanitizeString(cardId);
+    if(sanitizedId !== cardId){
+        console.warn(`Potentially malicious card ID detected: ${cardId} => ${sanitizedId}`);
+    }//end if 
+
+    req.sanitizedId = sanitizedId;
+    next();
+}; //end validate card ID 
+
+//validate search query 
+
+const validateSearchQuery = (req, res, next) => {
+    //handles simple (single param) and complex params (multiple params)
+    if(req.query.q && Object.keys(req.query).length === 1){
+        //simple search validation
+        const sanitizedQuery = QuerySanitizer.validateCardName(req.query.q);
+
+        if(!sanitizedQuery && req.query.q.trim() !== ''){
+            console.warn(`Invalid Search Query: ${req.query.q}`);
+        }
+        req.sanitizedQuery = sanitizedQuery || '';
+    } else {
+        //advance search - sanitize all parameters
+        const sanitizedParams = QuerySanitizer.sanitizeQueryObjects(req.query);
+        req.searchParams = sanitizedParams;
+    }
+    next();
+}; //end validate search query
 
 // ROUTES
 

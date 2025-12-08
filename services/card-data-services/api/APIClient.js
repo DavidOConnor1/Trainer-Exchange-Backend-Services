@@ -1,7 +1,29 @@
 import fetch, { Headers } from "node-fetch";
 import { POKEMON_TCG_API_BASE_URL, HEADERS } from "./config.js";
 
+//using class observer
+class APIObserver {
+    constructor() {
+        this.observers = [];
+    }
 
+    subscribe(observer){
+        this.observers.push(observer);
+        return () => this.unsubscribe(observer);
+    }
+
+    unsubscribe(observer){
+        this.observers = this.observers.filter(obs => obs !== observer);
+    }
+
+    notify(event, data){
+        this.observers.forEach(observer => {
+            if(observer[event]) {
+                observer[event](data);
+            }
+        });
+    }
+}
 
 //fetch a single card by its id
 export async function fetchCardById(cardId) {

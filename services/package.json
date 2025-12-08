@@ -1,0 +1,26 @@
+{
+  "name": "backend-services",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend microservices for Next.js frontend (Express + CORS).",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "lint": "eslint . --ext .js",
+    "format": "prettier --write .",
+    "start:users": "node ./user-service/index.js",
+    "start:cards": "node ./card-data-service/server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "cors": "^2.8.5",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0",
+    "eslint": "^9.10.0",
+    "prettier": "^3.3.0"
+  }
+}

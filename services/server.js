@@ -305,3 +305,37 @@ app.post("/api/admin/clear-cache", (req,res) => {
         });
     }
 }); //end cache
+
+/*
+    Error Handling
+*/
+
+//404 handling
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route not Found',
+        path: req.url
+    });
+}); //end 
+
+//global error handler
+app.use((err, req, res, next) => {
+    console.error('Unhandled Error: ',err);
+
+    //notify observers
+    APIObserver.notify('unhandled error', {
+        error: err.message,
+        stack: err.stack,
+        url: req.url,
+        method: req.method,
+        ip: req.ip,
+        timestamp: new Date().toISOString()
+    });
+
+    res.status(500).json({
+        success: false,
+        error: 'Internal Server Error',
+        message: process.env.NODE_ENV === 'development' ? err.message : 'something went wrong'
+    });
+}); //end global handler

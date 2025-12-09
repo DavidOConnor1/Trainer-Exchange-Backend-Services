@@ -272,3 +272,36 @@ app.get("/api/cards/advanced-search", validateSearchQuery, async (req, res) => {
         });
     }//end catch
 }); //end search with pagination support
+
+//admin endpoint
+app.get("/api/admin/call-log", (req,res) => {
+    //will add authentication later 
+    const apiCallLog = pokemonAPI.getAPICallLog();
+
+    res.json({
+        success: true,
+        data: apiCallLog,
+        count: apiCallLog.length
+    });
+}); //end
+
+//clear cache
+app.post("/api/admin/clear-cache", (req,res) => {
+    //will authentication later
+    try{
+        const previousSize = pokemonAPI.cache?.size || 0;
+        pokemonAPI.clearCache();
+
+        res.json({
+            success: true,
+            message: 'Cache cleared successfully',
+            cacheCleared: previousSize
+        });
+    } catch(err) {
+        res.status(500).json({
+            success: false,
+            error: 'Failed to clear cache',
+            message: err.message
+        });
+    }
+}); //end cache

@@ -339,3 +339,45 @@ app.use((err, req, res, next) => {
         message: process.env.NODE_ENV === 'development' ? err.message : 'something went wrong'
     });
 }); //end global handler
+
+const server = app.listen(PORT, () => {
+    console.log(`
+        Server is running!
+        Port: ${PORT}
+        URL: http://localhost:${PORT}
+        Health: http://localhost:${PORT}/health
+        API status: http://localhost:${PORT}/api/status
+        `);
+});
+
+//shut down function
+
+const shutdown = () => {
+    console.log('\nServer Shutting Down..');
+
+    //log final stats
+    const apiCallLog = pokemonAPI.getAPICallLog();
+    const errors = pokemonAPI.getErrors();
+
+    console.log(`
+        Final Stats:
+        Total API Calls: ${apiCallLog.length}
+        Successful: ${apiCallLog.filter(log => log.status === 'success').length}
+        Failed: ${apiCallLog.filter(log => log.status === 'error').length}
+        Total Errors: ${errors.length}
+            `);
+
+            server.close(() => {
+                console.log('Server Closed');
+                process.exit(0);
+            });
+
+            //force closes the server after 10 seconds
+            setTimeout(() => {
+                console.error('Force Shutdown');
+                process.exit(1);
+            }, 10000);
+}//end shutdown
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

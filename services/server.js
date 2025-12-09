@@ -5,7 +5,12 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
 import { pokemonAPI, APIObserver } from './card-data-services/api/APIClient';
-import { searchCards } from './card-data-services/search-service/SearchIndex';
+import { searchCards,
+    searchCardsPaginated,
+    searchCardsByName,
+    searchCardsByType,
+    searchCardsBySet,
+    searchByMultipleCriteria } from './card-data-services/search-service/SearchIndex';
 import { QuerySanitizer } from './card-data-services/search-service/SearchIndex';
 
 //import logging and observers
@@ -55,33 +60,20 @@ APIObserver.subscribe(loggingObserver);
 APIObserver.subscribe(errorTracking);
 
 //middle ware to track all requests
-const requestMonitor = (req, res, next) => {
+const requestLogger = (req, res, next) => {
     const startTime = Date.now();
-
-    //log request
+    
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} from ${req.ip}`);
-
-    //monitor response
+    
     res.on('finish', () => {
         const duration = Date.now() - startTime;
         console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
-
-        //track errors
-        if(res.statusCode >= 400){
-            APIObserver.notify('apiCallError', {
-                endpoint: req.url,
-                method: req.method,
-                status: res.statusCode,
-                duration,
-                ip: req.ip,
-                timestamp: new Date().toISOString()
-            });
-        }
     });
+    
     next();
-}; //end request monitor
+};
 
-app.use(requestMonitor);
+app.use(requestLogger);
 
 /*
     Input validation middle ware
@@ -156,122 +148,172 @@ app.get('/api/status', (req, res) => {
     });
 });
 
-//fetches card by id 
-app.get("/api/cards/:id", validateCardId, async(req,res) => {
-    try{
-        const cardId = req.sanitizedId;
-
-        if(!cardId){
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid card id after sanitization'
-            });
-        }//end if
-
-        const card = await pokemonAPI.fetchCardById(cardId);
-
-        if(!card) {
-            return res.status(404).json({
-                success: false,
-                error: 'Card not found'
-            });
-        } //end if
-        
-        res.json({
-            success: true,
-            data: card,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch(err) {
-        console.error(`error fetching card ${req.params.id}: `,err);
-
-        res.status(500).json({
-            success: false,
-            error: 'failed to fetch card',
-            message: err.message,
-            cardId: req.params.id
-        });
-    }
+// Fetch card by ID
+app.get("/api/cards/:id", async (req, res) => {
+    try {
+        const card = await fetchCardById(req.params.id);
+        res.json(card);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }//end catch
 });
 
-//search cards 
-app.get("/api/cards/search", validateSearchQuery, async (req,res) => {
-    try{
-        let results;
-
-        //determine search type
-        if(req.sanitizedQuery !== undefined){
-            //simple search
-            if(!req.sanitizedQuery){
+//  search endpoint
+app.get("/api/cards/search", async (req, res) => {
+    try {
+        const query = req.query.q;
+        
+        // If only 'q' parameter is provided, it's a simple search
+        if (query && Object.keys(req.query).length === 1) {
+            const results = await searchCards(query);
             return res.json({
-                success: true,
-                data: [],
-                message: 'Empty Search Query',
-                count: 0
-            });
-        }//end if not sanitizedQuery
-         results = await searchCards(req.sanitizedQuery);
-        } else {
-            //advanced search
-            results = await searchCards(req.searchParams);
-        }//end else
-
-            res.json({
                 success: true,
                 data: results,
                 count: results.length,
-                timestamp: new Date().toISOString()
+                searchType: 'simple'
             });
-
-       
-    }catch(err) {
-        console.error('Search Error: ', err);
-
-        res.status(500).json({
-            success: false,
-            error: 'Search Failed',
-            message: err.message
+        }//end if
+        
+        // Otherwise, it's an advanced search with multiple parameters
+        const results = await searchCards(req.query);
+        res.json({
+            success: true,
+            data: results,
+            count: results.length,
+            searchType: 'advanced'
         });
-    } // end catch
-}); //end search cards
+        
+    } catch (err) {
+        res.status(500).json({ 
+            success: false,
+            error: err.message 
+        });
+    }//end catch
+});//end search
 
-//search with pagination support
-
-app.get("/api/cards/advanced-search", validateSearchQuery, async (req, res) => {
-    try{
-        const { page =1, pageSize = 20, ...searchCriteria } = req.searchParams || req.query;
-
-        //apply pagination
-        const searchParams = {
-            ...searchCriteria,
-            page: Math.max(1, parseInt(page)),
-            pageSize: Math.min(100, Math.max(1, parseInt(pageSize)))
-        };
-
-        const results = await searchCards(searchParams);
-
+// Paginated search
+app.get("/api/cards/search/paginated", async (req, res) => {
+    try {
+        const { q, page = 1, pageSize = 20 } = req.query;
+        
+        let results;
+        if (q) {
+            // Search with query string
+            results = await searchCardsPaginated(q, parseInt(page), parseInt(pageSize));
+        } else {
+            // Search with object parameters
+            const params = { ...req.query };
+            delete params.page;
+            delete params.pageSize;
+            results = await searchCardsPaginated(params, parseInt(page), parseInt(pageSize));
+        }//end else
+        
         res.json({
             success: true,
             data: results,
             pagination: {
-                page: searchParams.page,
-                pageSize: searchParams.pageSize,
-                totalResults: results.length,
-                hasMore: results.length === searchParams.pageSize
-            },
-            timestamp: new Date().toISOString()
+                page: parseInt(page),
+                pageSize: parseInt(pageSize),
+                count: results.length
+            }
         });
+        
     } catch (err) {
-        console.error('Advanced Search Error: ', err);
-
-        res.status(500).json({
+        res.status(500).json({ 
             success: false,
-            error: 'Advanced Search Failure',
-            message: err.message
+            error: err.message 
         });
     }//end catch
-}); //end search with pagination support
+}); //end paginated search.
+
+// Search by name only
+app.get("/api/cards/search/name/:name", async (req, res) => {
+    try {
+        const { page = 1, pageSize = 20 } = req.query;
+        const results = await searchCardsByName(req.params.name, {
+            page: parseInt(page),
+            pageSize: parseInt(pageSize)
+        });
+        
+        res.json({
+            success: true,
+            data: results,
+            count: results.length
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            success: false,
+            error: err.message 
+        });
+    }//end catch
+}); //end search name only
+
+// Search by type
+app.get("/api/cards/search/type/:type", async (req, res) => {
+    try {
+        const { page = 1, pageSize = 20 } = req.query;
+        const results = await searchCardsByType(req.params.type, {
+            page: parseInt(page),
+            pageSize: parseInt(pageSize)
+        });
+        
+        res.json({
+            success: true,
+            data: results,
+            count: results.length
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            success: false,
+            error: err.message 
+        });
+    }//end catch
+}); //end search by type
+
+// Search by set
+app.get("/api/cards/search/set/:set", async (req, res) => {
+    try {
+        const { page = 1, pageSize = 20 } = req.query;
+        const results = await searchCardsBySet(req.params.set, {
+            page: parseInt(page),
+            pageSize: parseInt(pageSize)
+        });
+        
+        res.json({
+            success: true,
+            data: results,
+            count: results.length
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            success: false,
+            error: err.message 
+        });
+    }//end catch
+}); //end search by set
+
+// Advanced multi-criteria search
+app.get("/api/cards/search/advanced", async (req, res) => {
+    try {
+        const results = await searchByMultipleCriteria(req.query);
+        
+        res.json({
+            success: true,
+            data: results,
+            count: results.length,
+            criteria: req.query
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            success: false,
+            error: err.message 
+        });
+    }//end catch
+}); //end multi-criteria search
 
 //admin endpoint
 app.get("/api/admin/call-log", (req,res) => {
@@ -379,5 +421,3 @@ const shutdown = () => {
             }, 10000);
 }//end shutdown
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);

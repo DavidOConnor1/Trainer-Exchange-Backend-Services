@@ -1,61 +1,61 @@
 import fetch, { Headers } from "node-fetch";
 import { POKEMON_TCG_API_BASE_URL, HEADERS } from "./config.js";
 
-//using class observer
+// Observer Pattern Implementation
 class APIObserver {
     constructor() {
         this.observers = [];
     }
 
-    subscribe(observer){
+    subscribe(observer) {
         this.observers.push(observer);
         return () => this.unsubscribe(observer);
     }
 
-    unsubscribe(observer){
+    unsubscribe(observer) {
         this.observers = this.observers.filter(obs => obs !== observer);
     }
 
-    notify(event, data){
+    notify(event, data) {
         this.observers.forEach(observer => {
-            if(observer[event]) {
+            if (observer[event]) {
                 observer[event](data);
             }
         });
     }
-}
+}//end APIObserver
 
-//singleton 
-
+// Singleton Pattern Implementation
 class PokemonAPI {
     static instance = null;
     static observer = new APIObserver();
 
-    constructor(){
-        if(PokemonAPI.instance){
+    constructor() {
+        if (PokemonAPI.instance) {
             return PokemonAPI.instance;
-        }
-    this.apiCallLog = new Map(); //tracks calls by the endpoint
-    this.cache = new Map(); //cache responses to prevent duplicate calls
-    PokemonAPI.instance = this;
-    }
+        }//end if
+        
+        this.apiCallLog = new Map();
+        this.cache = new Map();
+        PokemonAPI.instance = this;
+    }//end constructor
 
-    static getInstance(){
-        if(!PokemonAPI.instance){
+    static getInstance() {
+        if (!PokemonAPI.instance) {
             PokemonAPI.instance = new PokemonAPI();
-        }
+        }//end if
         return PokemonAPI.instance;
-    }
+    }//end get instance
 
-    async makeRequest(endpoint, params = null){
+    async makeRequest(endpoint, params = null) {
         const url = params
-        ?`${endpoint}?${new URLSearchParams(params).toString()}`
-        : endpoint;
+            ? `${endpoint}?${new URLSearchParams(params).toString()}`
+            : endpoint;
 
         const cacheKey = url;
 
-        //checks cache first
-        if(this.cache.has(cacheKey)){
+        // Check cache first
+        if (this.cache.has(cacheKey)) {
             PokemonAPI.observer.notify('cacheHit', {
                 endpoint: url,
                 timestamp: new Date().toISOString()
@@ -63,7 +63,7 @@ class PokemonAPI {
             return this.cache.get(cacheKey);
         }
 
-        //logs api call 
+        // Log the API call
         const callId = Date.now();
         this.apiCallLog.set(callId, {
             endpoint: url,
@@ -77,18 +77,19 @@ class PokemonAPI {
             timestamp: new Date().toISOString()
         });
 
-        try{ //open try
+        try {
             const res = await fetch(url, {
                 headers: HEADERS,
             });
 
-            if(!res.ok){
+            if (!res.ok) {
                 const errorData = {
                     callId,
                     endpoint: url,
                     status: res.status,
                     timestamp: new Date().toISOString()
                 };
+                
                 this.apiCallLog.set(callId, {
                     ...this.apiCallLog.get(callId),
                     status: 'error',
@@ -103,7 +104,7 @@ class PokemonAPI {
             const data = await res.json();
             const responseData = data.data || data;
 
-            //update log with success
+            // Update log with success
             this.apiCallLog.set(callId, {
                 ...this.apiCallLog.get(callId),
                 status: 'success',
@@ -111,136 +112,217 @@ class PokemonAPI {
                 completedAt: new Date().toISOString()
             });
 
-            //cache response
+            // Cache the response
             this.cache.set(cacheKey, responseData);
 
             PokemonAPI.observer.notify('apiCallSuccess', {
                 callId,
                 endpoint: url,
-                timestamp: new Date.toISOString(),
+                timestamp: new Date().toISOString(),
                 dataLength: Array.isArray(responseData) ? responseData.length : 1
             });
 
             return responseData;
 
-        }//end try
-        catch(error){
+        } catch (error) {
             const errorData = {
                 callId,
                 endpoint: url,
                 error: error.message,
                 timestamp: new Date().toISOString()
             };
-
+            
             this.apiCallLog.set(callId, {
                 ...this.apiCallLog.get(callId),
                 status: 'error',
                 error: error.message
             });
 
-            PokemonAPI.observer.notify('apiCallError: ', errorData);
+            PokemonAPI.observer.notify('apiCallError', errorData);
             throw error;
-        }
-    }//end make request
+        }//end catch
+    }//end makeRequest
 
-//fetch a single card by its id
- async fetchCardById(cardId) {
-    const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards/${cardId}`;
-    return this.makeRequest(endpoint);      
- };
+    // Fetch a single card by its id
+    async fetchCardById(cardId) {
+        const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards/${cardId}`;
+        return this.makeRequest(endpoint);
+    } //end fetchCardById
 
- //fetching multiple cards with query parameters
-async  fetchCards(params = {}){
-    const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards`;
-    return this.makeRequest(endpoint, params); 
-    };
+    // Fetch multiple cards with query parameters
+    async fetchCards(params = {}) {
+        const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards`;
+        return this.makeRequest(endpoint, params);
+    }//end fetch cards
 
-    //retrive api call history
+    // Get API call history
     getAPICallLog() {
-    return Array.from(this.apiCallLog.entries()).map(([id, data]) => ({
-      id,
-      ...data
-    }));
-  }
+        return Array.from(this.apiCallLog.entries()).map(([id, data]) => ({
+            id,
+            ...data
+        }));
+    } //end get api call log
 
-  //get specific call details
-  getCallDetails(callId){
-    return this.apiCallLog.get(callId);
-  }
+    // Get specific call details
+    getCallDetails(callId) {
+        return this.apiCallLog.get(callId);
+    }//end get call details
 
-  //clear cache
-  clearCache() {
-    this.cache.clear();
-    PokemonAPI.observer.notify('cacheCleared', {
-        timestamp: new Date().toISOString(),
-        cacheSize: 0
-    });
-  }
+    // Clear cache
+    clearCache() {
+        this.cache.clear();
+        PokemonAPI.observer.notify('cacheCleared', {
+            timestamp: new Date().toISOString(),
+            cacheSize: 0
+        });
+    } //end clear cache
 
-  //clears api call log
-  clearCallLog(){
-    this.apiCallLog.clear();
-  }
-} //end pokemonAPI
+    // Clear API call log
+    clearCallLog() {
+        this.apiCallLog.clear();
+    }
+}//end pokemon api
 
-//observers for monitoring
+// observers for monitoring
 class LoggingObserver {
     apiCallStart(data) {
-        console.log(`[${data.timestamp}] API call started: ${data.endpoint}`);
+        console.log(`[${data.timestamp}] API Call Started: ${data.endpoint}`);
     }
 
-    apiCallSuccess(data){
-        console.log(`[${data.timestamp}] API call successful: ${data.endpoint} (${data.dataLength} items)`);
-    }
-    apiCallError(data){
-        console.error(`[${data.timestamp}] API call failed: ${data.endpoint} - ${data.error}`);
+    apiCallSuccess(data) {
+        console.log(`[${data.timestamp}] API Call Successful: ${data.endpoint} (${data.dataLength} items)`);
     }
 
-    cacheHit(data){
+    apiCallError(data) {
+        console.error(`[${data.timestamp}] API Call Failed: ${data.endpoint} - ${data.error}`);
+    }
+
+    cacheHit(data) {
         console.log(`[${data.timestamp}] Cache Hit: ${data.endpoint}`);
     }
-}//emd logging observer
+}//end logging observer
 
-//error tracker for the observer
-
-class ErrorTrackingObserver{
-    constructor(){
+class ErrorTrackingObserver {
+    constructor() {
         this.errors = [];
     }
 
-    apiCallError(data){
+    apiCallError(data) {
         this.errors.push({
             ...data,
             type: 'API_ERROR'
         });
     }
 
-    getErrors(){
+    getErrors() {
         return this.errors;
     }
 
-    clearErrors(){
+    clearErrors() {
         this.errors = [];
     }
-}//end error tracking observer
+}//end tracking observer
 
-//export singleton instance
-export const pokemonAPI = pokemonAPI.getInstance();
 
-//exports observer
-export const APIObserver = pokemonAPI.observer;
+//  SANITIZATION 
 
-//export observer classes for external use
-export {LoggingObserver, ErrorTrackingObserver};
+class QuerySanitizer {
+    static sanitizeString(input) {
+        if (typeof input !== 'string') return '';
+        
+        // Remove potentially dangerous characters
+        const sanitized = input.replace(/[<>{}[\];'"\\|`~!@#$%^&*()+=]/g, '');
+        
+        // Trim and limit length
+        return sanitized.trim().slice(0, 100);
+    }//end sanitizeString
 
+    static sanitizeQueryObject(params) {
+        if (typeof params !== 'object' || params === null) return {};
+        
+        const sanitized = {};
+        
+        for (const [key, value] of Object.entries(params)) {
+            if (typeof value === 'string') {
+                sanitized[key] = this.sanitizeString(value);
+            } else if (typeof value === 'number') {
+                sanitized[key] = isFinite(value) ? value : 0;
+            } else if (Array.isArray(value)) {
+                sanitized[key] = value.map(item => 
+                    typeof item === 'string' ? this.sanitizeString(item) : item
+                );
+            } else {
+                sanitized[key] = value;
+            }
+        }//end for
+        
+        return sanitized;
+    }//end sanitizeQueryObject
+}//end Query Sanitizer
+
+
+// SEARCH FUNCTION 
+
+async function searchCards(params) {
+    const instance = PokemonAPI.getInstance();
+    
+    // If params is a string, treat it as a simple name search
+    if (typeof params === 'string') {
+        const sanitizedName = QuerySanitizer.sanitizeString(params);
+        if (!sanitizedName) return [];
+        
+        return instance.fetchCards({ 
+            q: `name:${sanitizedName}*`,
+            pageSize: 50 
+        });
+    }
+    
+    // If params is an object, treat it as advanced search
+    if (typeof params === 'object' && params !== null) {
+        const sanitizedParams = QuerySanitizer.sanitizeQueryObject(params);
+        return instance.fetchCards(sanitizedParams);
+    }
+    
+    // Invalid input
+    return [];
+}
+
+
+// EXPORTS
+
+
+// Get singleton instance
+const pokemonAPI = PokemonAPI.getInstance();
+
+// Set up default observers
+const loggingObserver = new LoggingObserver();
+const errorTracker = new ErrorTrackingObserver();
+
+PokemonAPI.observer.subscribe(loggingObserver);
+PokemonAPI.observer.subscribe(errorTracker);
+
+// Export singleton instance
+export { pokemonAPI };
+
+// Export observer
+export const apiObserver = PokemonAPI.observer;
+
+// Export observer classes
+export { LoggingObserver, ErrorTrackingObserver };
+
+// Export sanitizer
+export { QuerySanitizer };
+
+// Export the search function
+export { searchCards };
+
+// Export functions
 export async function fetchCardById(cardId) {
-    return pokemonAPI.fetchCardById(cardId);
+    const sanitizedId = QuerySanitizer.sanitizeString(cardId);
+    return pokemonAPI.fetchCardById(sanitizedId);
 }
 
 export async function fetchCards(params = {}) {
-    return pokemonAPI.fetchCards(params);
+    const sanitizedParams = QuerySanitizer.sanitizeQueryObject(params);
+    return pokemonAPI.fetchCards(sanitizedParams);
 }
-
-
-
-

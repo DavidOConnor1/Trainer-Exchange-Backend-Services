@@ -1,4 +1,4 @@
-import { pokemonAPI } from "../api/APIClient";
+import { pokemonAPI } from "../api/APIClient.js";
 
 //Query Sanitization to prevent any sort of attacks on the system
 

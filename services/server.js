@@ -4,17 +4,17 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
-import { pokemonAPI, APIObserver } from './card-data-services/api/APIClient';
+import { pokemonAPI, apiObserver } from './card-data-services/api/APIClient.js';
 import { searchCards,
     searchCardsPaginated,
     searchCardsByName,
     searchCardsByType,
     searchCardsBySet,
-    searchByMultipleCriteria } from './card-data-services/search-service/SearchIndex';
-import { QuerySanitizer } from './card-data-services/search-service/SearchIndex';
+    searchByMultipleCriteria } from './card-data-services/search-service/SearchIndex.js';
+import { QuerySanitizer } from './card-data-services/search-service/SearchIndex.js';
 
 //import logging and observers
-import { LoggingObserver, ErrorTrackingObserver } from './card-data-services/api/APIClient';
+import { LoggingObserver, ErrorTrackingObserver } from './card-data-services/api/APIClient.js';
 
 
 dotenv.config();
@@ -56,8 +56,8 @@ app.use('/api/', limiter);
 const loggingObserver = new LoggingObserver();
 const errorTracking = new ErrorTrackingObserver();
 
-APIObserver.subscribe(loggingObserver);
-APIObserver.subscribe(errorTracking);
+apiObserver.subscribe(loggingObserver);
+apiObserver.subscribe(errorTracking);
 
 //middle ware to track all requests
 const requestLogger = (req, res, next) => {
@@ -114,7 +114,7 @@ const validateSearchQuery = (req, res, next) => {
         req.sanitizedQuery = sanitizedQuery || '';
     } else {
         //advance search - sanitize all parameters
-        const sanitizedParams = QuerySanitizer.sanitizeQueryObjects(req.query);
+        const sanitizedParams = QuerySanitizer.sanitizeQueryObject(req.query);
         req.searchParams = sanitizedParams;
     }
     next();
@@ -366,7 +366,7 @@ app.use((err, req, res, next) => {
     console.error('Unhandled Error: ',err);
 
     //notify observers
-    APIObserver.notify('unhandled error', {
+    apiObserver.notify('unhandled error', {
         error: err.message,
         stack: err.stack,
         url: req.url,

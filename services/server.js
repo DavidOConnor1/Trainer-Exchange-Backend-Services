@@ -236,3 +236,39 @@ app.get("/api/cards/search", validateSearchQuery, async (req,res) => {
     } // end catch
 }); //end search cards
 
+//search with pagination support
+
+app.get("/api/cards/advanced-search", validateSearchQuery, async (req, res) => {
+    try{
+        const { page =1, pageSize = 20, ...searchCriteria } = req.searchParams || req.query;
+
+        //apply pagination
+        const searchParams = {
+            ...searchCriteria,
+            page: Math.max(1, parseInt(page)),
+            pageSize: Math.min(100, Math.max(1, parseInt(pageSize)))
+        };
+
+        const results = await searchCards(searchParams);
+
+        res.json({
+            success: true,
+            data: results,
+            pagination: {
+                page: searchParams.page,
+                pageSize: searchParams.pageSize,
+                totalResults: results.length,
+                hasMore: results.length === searchParams.pageSize
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Advanced Search Error: ', err);
+
+        res.status(500).json({
+            success: false,
+            error: 'Advanced Search Failure',
+            message: err.message
+        });
+    }//end catch
+}); //end search with pagination support

@@ -194,3 +194,45 @@ app.get("/api/cards/:id", validateCardId, async(req,res) => {
         });
     }
 });
+
+//search cards 
+app.get("/api/cards/search", validateSearchQuery, async (req,res) => {
+    try{
+        let results;
+
+        //determine search type
+        if(req.sanitizedQuery !== undefined){
+            //simple search
+            if(!req.sanitizedQuery){
+            return res.json({
+                success: true,
+                data: [],
+                message: 'Empty Search Query',
+                count: 0
+            });
+        }//end if not sanitizedQuery
+         results = await searchCards(req.sanitizedQuery);
+        } else {
+            //advanced search
+            results = await searchCards(req.searchParams);
+        }//end else
+
+            res.json({
+                success: true,
+                data: results,
+                count: results.length,
+                timestamp: new Date().toISOString()
+            });
+
+       
+    }catch(err) {
+        console.error('Search Error: ', err);
+
+        res.status(500).json({
+            success: false,
+            error: 'Search Failed',
+            message: err.message
+        });
+    } // end catch
+}); //end search cards
+

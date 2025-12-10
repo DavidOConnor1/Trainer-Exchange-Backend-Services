@@ -49,4 +49,35 @@ class SupabaseService {
             this.listeners[event] = this.listeners[event].filter(cb => cb !== callback)
         }
     }//end subscribe
+
+    notify(event, data) {
+        if(this.listeners[event]){
+            this.listeners[event].forEach(callback => {
+                try{
+                    callback(data)
+                } catch(error){
+                    console.error(`Error in ${event} observer:`, error)
+                }//end catch
+            })
+        }//end if
+    }//end notify
+
+    //authentication method
+    async signUp(email, password, username, displayName){
+        const {data, error} = await this.client.auth.signUp({
+            email,
+            password,
+            options:{
+                data: {
+                    username,
+                    display_name: displayName
+                }
+            }//end options
+        }) //end const
+
+        if(!error){
+            this.notify('auth:signup', data.user)
+        }//end if
+        return {data, error}
+    }//end sign up
 }//end supabase service

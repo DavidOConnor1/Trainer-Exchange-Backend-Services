@@ -21,11 +21,46 @@ class TimingProtectionUtility {
         return crypto.subtle.timingSafeEqual(aPadded, bPadded);
       }//end if
 
+      //fail safe: if the above method fails continue to this method
       let result = 0;
       for (let i = 0; i < maxLength; i++) {
         result |= aPadded[i] ^ bPadded[i];
       } //end for
       return result === 0;
-    } catch (err) {} //end catch
+    } catch (err) {
+        await this.constantTimeDelay(100)
+        return false
+    } //end catch
   } //end constantTime
+
+  static async constantTimeDelay(ms){
+    return new Promise(resolve => {
+        const start = Date.now()
+        const check = () => {
+            const elapsed = Date.now() - start
+            if(elapsed >= ms){
+                resolve()
+            } else {
+                requestAnimationFrame(check)
+            }//end else
+        }//end check
+        check()
+    })
+  }//end time delay
+
+  //hash string (consistent timing)
+  static async hashString(str){
+    const encoder = new TextEncoder()
+    const data = encoder.encode(str || '')
+
+    try{
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+        const hashArray = Array.from(new Uint8Array(hashBuffer))
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+
+    } catch(error){
+        //fallback: simple hash with consistent timing
+    }//end catch
+  }//end hash string
+
 } //end class

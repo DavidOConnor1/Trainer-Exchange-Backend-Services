@@ -212,4 +212,49 @@ class SupabaseService {
     }//end delete collection
 
     //card management methods
+    async addCardToCollection(collectionId, cardData){
+        const { data, error } = await this.client
+        .from('collection_cards')
+        .insert({
+            collection_id: collectionId,
+            card_id: cardData.id,
+            quantity: cardData.quantity || 1,
+            condition: cardData.condition || 'Mint',
+            notes: cardData.notes,
+            acquired_at: cardData.acquired_at || new Date().toISOString()
+        })
+        .select()
+        .single()
+
+        if(!error){
+            this.notify('card:added', data)
+        }//end if
+
+        return {data, error}
+    }//end addCardToCollection
+
+    async getCollectionCards(collectionId){
+        return await this.client
+        .from('collection_cards')
+        .select('*')
+        .eq('collection_id', collectionId)
+        .order('created_at', {ascending: false})
+    }//end get collection cards
+
+    async updateCard(cardId, updates){
+        const { data, error } = await this.client
+        .from('collection_cards')
+        .update(updates)
+        .eq('id', cardId)
+        .select()
+        .single()
+
+        if(!error){
+            this.notify('card:updated', data)
+        }//end error
+    }//end update card
+
+    async removeCardFromCollection(cardId){
+        
+    }
 }//end supabase service

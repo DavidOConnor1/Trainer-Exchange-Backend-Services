@@ -255,6 +255,31 @@ class SupabaseService {
     }//end update card
 
     async removeCardFromCollection(cardId){
-        
-    }
+        const {error} = await this.client
+        .from('collection_cards')
+        .delete()
+        .eq('id',cardId)
+
+        if(!error){
+            this.notify('card:removed', {id:cardId})
+        }//end if
+
+        return {error}
+    } //end remove card
+
+    async searchCardsInCollection(collectionId, query){
+        const response = await fetch(`/api/cards/search?q=${encodeURIComponent(query)}`)
+        const cards = await response.json()
+
+        //clarifies what cards are already in the collection
+        const {data: existingCards} = await this.getCollectionCards(collectionId)
+        const existingCardIds = new Set(existingCards.map(card => card.card_id))
+
+        return cards.map(card => ({
+            ...card,
+            inCollection: existingCardIds.has(card.id),
+            collectionData: existingCards.find(ec => ec.card_id === card.id)
+        }))
+    }//end search card in collection
 }//end supabase service
+

@@ -180,5 +180,36 @@ class SupabaseService {
             .order('created_at', {ascending: false})
     }//end getPubicCollections
 
-    
+    async updateCollection(collectionId, updates){
+        const { data, error } = await this.client
+        .from('collections')
+        .update({
+            ...updates,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', collectionId)
+        .select()
+        .single()
+
+        if(!error){
+            this.notify('collection:updated', data)
+        }//end
+
+        return {data, error}
+    }// end update collection
+
+    async deleteCollection(collectionId){
+        const { error } = await this.client
+        .from('collections')
+        .delete()
+        .eq('id', collectionId)
+
+        if(!error){
+            this.notify('collection:deleted ', {id: collectionId})
+        }//end if
+
+        return { error }
+    }//end delete collection
+
+    //card management methods
 }//end supabase service

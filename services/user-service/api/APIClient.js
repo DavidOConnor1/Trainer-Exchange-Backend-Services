@@ -283,3 +283,5 @@ class SupabaseService {
     }//end search card in collection
 }//end supabase service
 
+export const supabaseService = SupabaseService.getInstance()
+export default supabaseService

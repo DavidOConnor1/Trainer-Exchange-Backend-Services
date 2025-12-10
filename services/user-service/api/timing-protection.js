@@ -60,7 +60,48 @@ class TimingProtectionUtility {
 
     } catch(error){
         //fallback: simple hash with consistent timing
+        await this.constantTimeDelay(10)
+        let hash = 0
+        for(let i = 0; i < (str || '').length; i++){
+            hash = ((hash << 5) - hash) + str.charCodeAt(i)
+            hash |= 0 //converts to 32 bit int
+        }//end for
+        return Math.abs(hash).toString(16)
     }//end catch
   }//end hash string
 
+  //generates a random secure string
+  static generateSecureRandom(length = 32){
+    const array = new Uint8Array(length)
+    crypto.getRandomValues(array)
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('')
+  }//end generate randomsecure string
+
+  //enforce minimum execution time for a function
+  static async withMinimumTime(fn, minMs = 800){
+    const startTime = Date.now()
+
+    try{
+        const result = await fn()
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, minMs = elapsed)
+
+        if(remaining > 0){
+            await this.constantTimeDelay(remaining)
+        }//end if
+
+        return result
+    } catch(error){
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, minMs - elapsed)
+
+        if(remaining > 0){
+            await this.constantTimeDelay(remaining)
+        }//end if
+
+        throw error
+    }//end catch
+  }//end withMinimumtime
 } //end class
+
+export default TimingProtectionUtility

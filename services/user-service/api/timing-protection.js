@@ -1,7 +1,7 @@
 import { webcrypto, createHash, randomBytes, timingSafeEqual } from "crypto";
 const crypto = webcrypto;
 import { createClient } from "@supabase/supabase-js";
-import { compare } from "bcrypt";
+
 
 class TimingProtectionUtility {
 
@@ -166,10 +166,46 @@ class TimingProtectionUtility {
         return { data, error: null }
     } catch (err){
         //catches all unexpected errors
-        const elapsed
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
+        if(remaining > 0){
+            this.constantTimeDelay(remaining)
+        }//end if
 
+        //return generic error
+        return{
+            data: null,
+            err: new Error('Authenitcation Failed, please try again!')
+        }//end return
     }//end catch
   }//end signIn protection
+
+  async signUp(email, password, username, displayName){
+
+    const startTime = Date.now()
+    const MIN_EXECUTION_TIME = 1000 // Minimum 1 second execution
+
+    try{
+        //input validation with constant time
+        if(!email || !password || !username){
+            this.constantTimeDelay(150)
+            throw new Error('All fields are required')
+        }//end if
+
+        //rate limiting check
+        const clientIp = await this.getClientIp()
+        const rateLimited = await this.checkRateLimit(this.constantTimeHash(clientIp))
+
+        if(rateLimited){
+            this.constantTimeDelay(200)
+            throw new Error('Too many registration attempts, please try again later')
+        }//end if
+
+        //validate email format with constant time
+    } catch (err){
+
+    }//end catch
+  }//end signUp protection
 
   //hash string (consistent timing)
   static async hashString(str){

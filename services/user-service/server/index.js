@@ -125,10 +125,52 @@ class UserManagerServer {
         this.app.get('/api/public/collections', async (req, res) => {
             try{
                 const {data, error} = await supabaseService.getPublicCollections();
-            } catch(error) {
 
+                if(error) throw error;
+                res.json(data);
+            } catch(error) {
+                this.logger.error(`Public Collections error: ${error.message}`);
+                res.status(500).json({error: 'Failed to fetch collections'});
+            }//end catch
+        }); //end public collections
+
+        //protected endpoints
+        const protectedRouter = express.Router();
+        protectedRouter.use(this.validateAuth.bind(this));
+
+        //user collections
+        protectedRouter.get('/collections', async(req, res) => {
+            try{
+                const {data, error} = await supabaseService.getUserCollections(req.user.id);
+
+                if(error) throw error;
+                res.json(data);
+            } catch(error) {
+                this.logger.error(`User Collections Error: ${error.message}`);
+                res.status(500).json({error: 'Failed to fetch user collections'})
             }//end catch
         });
+
+        protectedRouter.post('/collections', async (req, res) => {
+            try{
+                const {name, description, is_public} = req.body;
+
+                const {data, error} = await supabaseService.createCollection(
+                    name,
+                    description,
+                    is_public
+                );
+                if(error) throw error;
+
+                this.logger.info(`Collection Created: ${data.id} by user ${req.user.id}`);
+                res.status(201).json(data);
+            } catch (error){
+                this.logger.error(`Create Collection failed: ${error.message}`);
+                res.status(400).json({ error: 'Failed to create collection'});
+            }//end catch
+        });
+
+        //cards in collection
     }//end routes
 
 }//end user manager server

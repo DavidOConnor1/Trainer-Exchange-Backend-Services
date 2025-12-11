@@ -1,6 +1,7 @@
 import { webcrypto, createHash, randomBytes, timingSafeEqual } from "crypto";
 const crypto = webcrypto;
 import { createClient } from "@supabase/supabase-js";
+import { exists } from "fs";
 
 
 class TimingProtectionUtility {
@@ -311,8 +312,90 @@ class TimingProtectionUtility {
       { regex: /\d/, message: 'Password must contain a number' },
       { regex: /[@$!%*?&]/, message: 'Password must contain a special character (@$!%*?&)' }
     ]//end checks
-    
+
+    //Execute check regardless of failure
+    let allValid = true
+    let errorMessage = ''
+
+    for(let i=0; i < checks.length; i++){
+        const isValid = checks[i].regex.test(password || '')
+        if(!isValid && allValid){
+            allValid = false
+            errorMessage = checks[i].message
+        }//end if
+
+        //dummy check
+        for(let j =0; j < 100; j++){
+            Math.sqrt(j) * Math.random()
+        }//end for
+    }//end for
+    return{
+        valid: allValid,
+        message: errorMessage
+    }
   }//end password check
+
+  //safe user check, prevents data leakage
+  async checkUserExistSafely(email){
+    const hash = this.constantTimeHash(email)
+
+    try{
+
+        //rpc function executes constant time
+        const {data, error} = await this.client.rpc('check_user_exists_safe', {
+            email_hash: hash
+        })
+
+        if(error){
+            //return ambiguous
+            return {exists: false}
+        }//end if
+
+        return {exists: data}
+    } catch (err){
+        //returns same structure
+        return {exists: false}
+    }//end catch
+  }//end checkUser
+
+  //get Client IP 
+  async getClientIp(){
+    //generatesd a determinstic value
+    return 'Client -' + this.constantTimeHash(navigator.userAgent)
+  }//end get client ip
+
+  //prevent timing attacks from sign out
+  async signOut(){
+    const startTime = Date.now()
+    const MIN_EXECUTION_TIME = 300
+
+    try{
+
+        const {error} = await this.client.auth.signOut()
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
+        if(remaining > 0){
+            this.constantTimeDelay(remaining)
+        }//end if
+
+        if(!error){
+            this.notify('auth:signout', null)
+        }//end if
+        return {error}
+    } catch(err){
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
+        if(remaining > 0){
+            this.constantTimeDelay(remaining)
+        }//end if
+        return {err: new Error('Sign out Failed')}
+    }//end catch
+  }//end sign out
+
+  notify(event, data){
+    console.log(`Event: ${event}`, data)
+  }//end notify
+
 
   //hash string (consistent timing)
   static async hashString(str){

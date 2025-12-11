@@ -407,11 +407,38 @@ class SupabaseService {
     const validated = {}
 
     for(const field of allowedFields){
-
+        if(updates[field] === undefined){
+            if(typeof updates[field] === 'string'){
+                validated[field] = updates[field].trim().substring(0, 100)
+            } else {
+                validated[field] = updates[field];
+            }//end else
+        }//end if 1
     }//end for
+    return validated;
   }//end  validate profile update
 
+  //additional security methods
+  clearSensitiveData(){
+    //clear rate limit
+    this.authService.clearRateLimting();
 
+    //clear local storage
+    if(typeof window !=='undefined'){
+        localStorage.removeItem('supabase.auth.token');
+        localStorage.removeItem('pokemon_auth_token');
+    }//end if
+
+    this.notify('security: data_cleared', {timestamp: new Date()});
+  }//end clear sensitive data
+
+  getClientInfo(){
+    return {
+        clientId: this.clientId,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent: 'server',
+        timestamp: new Date().toISOString()
+    }; //end return
+  } //end client info
 } //end supabase service
 
 export const supabaseService = SupabaseService.getInstance();

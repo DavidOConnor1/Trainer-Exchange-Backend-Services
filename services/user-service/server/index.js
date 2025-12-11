@@ -6,9 +6,9 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from 'crypto';
 
 //import methods from service classes
-import TimingProtectionUtility from '../api/timing-protection.js';
-import {supabaseService} from '../api/APIClient.js'
-import { callbackify } from "util";
+import { TimingProtectionUtility } from "../api/timing-protection.js";
+import { supabaseService } from "../api/APIClient.js";
+
 
 class UserManagerServer {
     constructor(){
@@ -119,5 +119,16 @@ class UserManagerServer {
          }//end catch
     }//validate auth
 
-    
+    setupRoutes(){
+
+        //public endpoints
+        this.app.get('/api/public/collections', async (req, res) => {
+            try{
+                const {data, error} = await supabaseService.getPublicCollections();
+            } catch(error) {
+
+            }//end catch
+        });
+    }//end routes
+
 }//end user manager server

@@ -4,7 +4,7 @@ const crypto = webcrypto;
 
 
 
-class TimingProtectionUtility {
+export class TimingProtectionUtility {
 
     constructor(){
        
@@ -261,4 +261,4 @@ class TimingProtectionUtility {
   }//end withMinimumtime
 } //end class
 
-export default TimingProtectionUtility;
+

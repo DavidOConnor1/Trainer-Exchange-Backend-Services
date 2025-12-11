@@ -441,5 +441,6 @@ class SupabaseService {
   } //end client info
 } //end supabase service
 
-export const supabaseService = SupabaseService.getInstance();
-export default supabaseService;
+const supabaseService = SupabaseService.getInstance();
+//exports as a singleton instance
+export {supabaseService};

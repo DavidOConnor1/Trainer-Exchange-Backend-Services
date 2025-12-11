@@ -1,23 +1,13 @@
 import { webcrypto, createHash, randomBytes, timingSafeEqual } from "crypto";
 const crypto = webcrypto;
-import { createClient } from "@supabase/supabase-js";
-import { exists } from "fs";
+
+
 
 
 class TimingProtectionUtility {
 
     constructor(){
-        this.client = createClient (
-            process.env.SUPABASE_URL,
-            process.env.SUPABASE_ANON_KEY,
-            {
-                auth: {
-                    autoRefreshToken: true,
-                    persistSession: true,
-                    detectSessionInUrl: false
-                }
-            }
-        )
+       
 
         //constant-time operations map
     this.constantTimeOps = {
@@ -48,7 +38,7 @@ class TimingProtectionUtility {
       aPadded.set(aBuffer);
       bPadded.set(bBuffer);
 
-      if (crypto.subtle && crypto.subtle.timingSafeEqual) {
+      if (crypto.subtle?.timingSafeEqual) {
         return crypto.subtle.timingSafeEqual(aPadded, bPadded);
       }//end if
 
@@ -72,6 +62,20 @@ class TimingProtectionUtility {
     .digest('hex')
   }//end time hash
 
+  //record auth attempt
+  recordAttempt(identifier, success)
+  {
+    const now = Date.now()
+    const attempts = this.authAttempts.get(identifier) || []
+
+    if(!success){
+        attempts.push(now)
+        this.authAttempts.set(identifier, attempts)
+    } else {
+        //clears attempts
+        this.authAttempts.delete(identifier)
+    }//end else
+  }//end record
 
   static async constantTimeDelay(ms){
     return new Promise(resolve => {
@@ -106,80 +110,7 @@ class TimingProtectionUtility {
     return false
   }//end check rate limiter
 
-  //timing-attack protected signIn
-  async signIn(email, password){
-    const startTime = Date.now()
-    const MIN_EXECUTION_TIME = 800 //minimum 800ms
 
-    try{
-        //input validation
-        if(!email || !password){
-            this.constantTimeDelay(150)
-            throw new Error('Email or password may be incorrect')
-        }//end if
-
-        //rate limit checking
-        const rateLimited = await this.checkRateLimit(this.constantTimeHash(email))
-        if(rateLimited){
-            this.constantTimeDelay(200)
-            throw new Error('Too many attempts, please try again later')
-        }//end if
-
-        //normalizes inputs
-        const normalizedEmail = email.toLowerCase().trim()
-        const hashedEmail = this.constantTimeHash(normalizedEmail)
-
-        //attempt authentication with SupaBase
-        const {data, error} = await this.client.auth.signInWithPassword({
-            email: normalizedEmail,
-            password: password
-        })
-
-        //records attempt
-        this.recordAttempt(hashedEmail, !error)
-
-        if(error){
-            //constant time operations run regardless
-            this.constantTimeDelay(100)
-
-            //generic error
-            const genericError = new Error('invalid email or password')
-            genericError.code = 'auth/invalid-credentials'
-
-            //calculates remaining time
-            const elapsed = Date.now() - startTime
-            const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
-
-            if(remaining > 0){
-                this.constantTimeDelay(remaining)
-            }//end if
-            return {data: null, error: genericError}
-        }//end if
-
-        //successful login
-        const elapsed = Date.now() - startTime
-        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
-        if(remaining > 0){
-            this.constantTimeDelay(remaining)
-        }//end if
-
-        this.notify('auth:signin', data.user)
-        return { data, error: null }
-    } catch (err){
-        //catches all unexpected errors
-        const elapsed = Date.now() - startTime
-        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
-        if(remaining > 0){
-            this.constantTimeDelay(remaining)
-        }//end if
-
-        //return generic error
-        return{
-            data: null,
-            err: new Error('Authenitcation Failed, please try again!')
-        }//end return
-    }//end catch
-  }//end signIn protection
 
   async signUp(email, password, username, displayName){
 
@@ -360,9 +291,13 @@ class TimingProtectionUtility {
 
   //get Client IP 
   async getClientIp(){
-    //generatesd a determinstic value
+    //generates a determinstic value
     return 'Client -' + this.constantTimeHash(navigator.userAgent)
   }//end get client ip
+
+  clearRateLimiting(){
+    this.authAttempts.clear()
+  }//end clear rate
 
   //prevent timing attacks from sign out
   async signOut(){

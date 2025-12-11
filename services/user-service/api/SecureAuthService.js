@@ -67,6 +67,7 @@ class SecureAuthService {
     }//end catch
   }//end sign in protection
 
+  //time protected signup
    async signUp(email, password, username, displayName) {
     const MIN_EXECUTION_TIME = 1000;
 
@@ -136,6 +137,51 @@ class SecureAuthService {
     } //end catch
   }//end protected signup
 
-  
+//time protected signout
+async signOut() {
+    const MIN_EXECUTION_TIME = 300;
 
+    const signOutOperation = async () => {
+        const {error} = await this.supabase.auth.signOut();
+        return {error};
+    } //end signout operation
+    try{
+        return await TimingProtectionUtility.withMinimumTime(
+            signOutOperation,
+            MIN_EXECUTION_TIME
+        );
+    } catch(error){
+        return{
+            error: {message: 'Sign out failed'}
+        }; //end return
+    }//end catch
+}//end sign out
+
+//protected get current user
+async getCurrentUser(){
+    const MIN_EXECUTION_TIME = 200;
+
+    const getUserOperation = async () => {
+        return await this.supabase.auth.getUser();
+    }; //end get user op
+
+    try{
+        return await TimingProtectionUtility.withMinimumTime(
+            getUserOperation,
+            MIN_EXECUTION_TIME
+        );
+    } catch(error) {
+        return {
+            data: {user : null},
+            error: {message: 'Failed to get user'}
+        }; //end return
+    }//end catch
+}//end get current user
+
+//clear rate limiting for testing
+    clearRateLimting(){
+        this.timingProtection.clearRateLimiting();
+    } //end clear rate limiting
 }//end service auth service
+
+export default SecureAuthService;

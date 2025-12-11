@@ -198,33 +198,7 @@ class TimingProtectionUtility {
     this.authAttempts.clear()
   }//end clear rate
 
-  //prevent timing attacks from sign out
-  async signOut(){
-    const startTime = Date.now()
-    const MIN_EXECUTION_TIME = 300
-
-    try{
-
-        const {error} = await this.client.auth.signOut()
-        const elapsed = Date.now() - startTime
-        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
-        if(remaining > 0){
-            this.constantTimeDelay(remaining)
-        }//end if
-
-        if(!error){
-            this.notify('auth:signout', null)
-        }//end if
-        return {error}
-    } catch(err){
-        const elapsed = Date.now() - startTime
-        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
-        if(remaining > 0){
-            this.constantTimeDelay(remaining)
-        }//end if
-        return {err: new Error('Sign out Failed')}
-    }//end catch
-  }//end sign out
+ 
 
   notify(event, data){
     console.log(`Event: ${event}`, data)

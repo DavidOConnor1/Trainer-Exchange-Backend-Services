@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import SecureAuthService from "./SecureAuthService";
+import TimingProtectionUtility from "./timing-protection";
 
 class SupabaseService {
     static instance = null;
@@ -8,6 +10,7 @@ class SupabaseService {
             return SupabaseService.instance
         }//end if
 
+        //iniatilize supabase client
         const supabaseUrl = import.meta.env.PROJECT_URL
         const supabaseKey = import.meta.env.ANONKEY
 
@@ -19,11 +22,26 @@ class SupabaseService {
             auth: {
                 autoRefreshToken: true,
                 persistSession: true,
-                detectSessionInUrl: true
+                detectSessionInUrl: true,
+                storageKey: 'pokemon_auth_token',
+                storage: this.getSecureStorage()
+            },
+            global: {
+                headers: {
+                    'X-Client-ID': this.getClientId()
+                }
             }
-        })
+        })//end create client
 
+        //intialize secure auth service
+        this.authService = new SecureAuthService(this.client)
+
+        //observer pattern setup
         this.listeners = {}
+
+        //generate a client id
+        this.clientId = this.getClientId()
+
         SupabaseService.instance = this
     }//constructor
 
@@ -34,9 +52,76 @@ class SupabaseService {
         return SupabaseService.instance
     }//end instance
 
-    getClient(){
-        return this.client
-    }//end getclient
+   //gets or creates client id
+   getClientId(){
+    if(typeof window === 'undefined'){
+        return 'server-'+ TimingProtectionUtility.generateSecureRandom(8)
+    }//end if
+
+    let clientId = localStorage.getItem('pokemon_client_id');
+
+    if(!clientId) {
+        clientId = TimingProtectionUtility.generateSecureRandom(16)
+        localStorage.setItem('pokemon_client_id', clientId)
+    }//end if
+    return clientId
+   }//end get client id
+
+   //secure storage for auth tokens
+   getSecureStorage(){
+    if(typeof window === 'undefined'){
+        return{
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {}
+        }//end return
+    }//end if
+
+    return{
+        getItem: (key) => {
+            try{
+                const item = localStorage.getItem(key)
+                if(!item) return null
+
+                //obfuscation
+                return this.deobfuscate(item)
+            } catch {
+                return null
+            }//end catch
+        }, //end get item
+        setItem: (key, value) => {
+            try{
+                //simple obfuscation
+                const obfuscation = this.obfuscate(value)
+                localStorage.setItem(key, obfuscated)
+            } catch(error){
+                console.error('Failed to store auth token: ',error)
+            }
+        }, //end set item
+        removeItem: (key) => {
+            try{
+                localStorage.removeItem(key)
+            } catch(error){
+                console.error('Failed to remove auth token: ',error)
+            }//end catch
+        }//end removeItem
+    }; //end return
+   }//end secure storage 
+
+   //obfuscate
+   obfuscate(str) {
+        if(typeof window === 'undefined') return str
+        return btoa(unescape(encodeURIComponent(str)))
+   } //obfuscate
+
+   deobfuscate(str){
+        if(typeof window === 'undefined') return str;
+        try{
+            return decodeURIComponent(escape(atob(str)))
+        } catch {
+            return null
+        }//end catch
+   }//deobfuscate
 
     //observer pattern
     subscribe(event, callback){
@@ -64,30 +149,38 @@ class SupabaseService {
 
     //authentication method
     async signUp(email, password, username, displayName){
-        const {data, error} = await this.client.auth.signUp({
-            email,
-            password,
-            options:{
-                data: {
-                    username,
-                    display_name: displayName
-                }
-            }//end options
-        }) //end const
+       const {data, error} = await this.authService.signUp(
+        email,
+        password,
+        username,
+        displayName
+       )
 
-        if(!error){
-            this.notify('auth:signup', data.user)
-        }//end if
-        return {data, error}
+       if(!error && data?.user){
+        this.notify('auth:signup', {user: data.user, timestamp: new Date()})
+       } else if(error){
+        this.notify('auth:error', {
+            type: 'signup',
+            error: error.message,
+            timestamp: new Date()
+        })
+       }//end else if
+       return {data, error}
     }//end sign up
 
     async signIn(email, password){
-        const { error } = await this.client.auth.signOut()
+        const { data, error } = await this.authService.signIn(email, password)
 
-        if(!error){
-            this.notify('auth:signout', null)
-        }//end if
-        return { error }
+       if(!error && data?.user){
+        this.notify('auth:signin', {user: data.user, timestamp: new Date()});
+       } else if(error) {
+        this.notify('auth:error', {
+            type: 'signin',
+            error: error.message,
+            timestamp: new Date()
+        })
+       }//end else if
+       return {data , error};
     }//end signIn
 
     getCurrentUser(){

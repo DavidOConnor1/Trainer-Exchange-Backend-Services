@@ -171,6 +171,79 @@ class UserManagerServer {
         });
 
         //cards in collection
+        protectedRouter.get('/collections/:collectionId/cards', async (req, res) => {
+            try{
+                //verify is user owns collection
+                const {data: collection} = await this.supabaseAdmin
+                .from('collections')
+                .select('id')
+                .eq('id', req.params.collectionId)
+                .eq('user_id', req.user.id)
+                .single();
+
+                if(!collection){
+                    return res.status(404).json({error: 'Collection not found'});
+                }//end if
+
+                const {data, error} = await supabaseService.getCollectionCards(req.params.collectionId);
+
+                if(error) throw error;
+                res.json(data);
+            } catch(error) {
+                this.logger.error(`Get collection cards error: ${error.message}`);
+                res.status(500).json({error: 'failed to fetch cards'});
+            }//end catch
+        });
+
+        //adding cards to collection
+        protectedRouter.post('/collections/:collectionId/cards', async(req,res) => {
+            try{
+                const {card_id, quantity, condition, notes} = req.body;
+
+                //verify ownership
+                const {data: collection} = await this.supabaseAdmin
+                .from('collections')
+                .select('id')
+                .eq('id', req.params.collectionId)
+                .eq('user_id', req.user.id)
+                .single();
+
+                if(!collection){
+                    return res.status(404).json({error: 'collection not found'});
+                }//end if 
+
+                //timing protection implementation
+                const timingProtect = new TimingProtectionUtility();
+                const cardData = {card_id, quantity, condition, notes};
+
+                const {data,error} = await timingProtect.withMinimumTime(
+                    async() => {
+                        return await supabaseService.addCardToCollection(
+                            req.params.collectionId,
+                            cardData
+                        );
+                    },
+                    300 //minimum 300ms
+                );
+
+                if (error) throw error;
+
+                this.logger.info(`Card added to collection ${req.params.collectionId}`);
+                res.status(201).json(data);
+
+            } catch(error) {
+                this.logger.error(`Add card error: ${error.message}`);
+                res.status(400).json({error: 'failed to add card'})
+            }//end catch
+        });
+
+        //mount protected routes
+        this.app.use('/api', protectedRouter);
+
+        //404 handler
+        this.app.use('*', (req,res) => {
+            res.status(404).json({error: 'endpoint not found'});
+        });
     }//end routes
 
 }//end user manager server

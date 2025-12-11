@@ -202,10 +202,117 @@ class TimingProtectionUtility {
         }//end if
 
         //validate email format with constant time
-    } catch (err){
+        if(!this.isValidEmailConstantTime(email)){
+            this.constantTimeDelay(100)
+            throw new Error('invalid email format')
+        }//end if
 
+        //check password strength
+        const passwordCheck = this.checkPasswordtrengthConstantTime(password)
+        if(!passwordCheck.valid){
+            this.constantTimeDelay(100)
+            throw new Error(passwordCheck.message)
+        }//end if
+
+        //normalize inputs
+        const normalizedEmail = email.toLowerCase().trim()
+        const normalizedUsername = username.toLowerCase().trim()
+
+        //check if user already exists
+        const {exists: userMightExist } = await this.checkUserExistSafely(normalizedEmail)
+
+        //attempts reg
+        const {data, error} = await this.client.auth.signUp({
+            email: normalizedEmail,
+            password: password,
+            options: {
+                data: {
+                    username: normalizedUsername,
+                    display_name: displayName?.trim() || normalizedUsername
+                }
+            }
+        })
+
+        //Record Attempt
+        this.recordAttempt(this.constantTimeHash(clientIp), !error)
+
+        if(error){
+            //handle errors with constant timing
+            let genericError
+
+            if(error.message.includes('Already Registered')){
+                //user exists response with same time as non existant
+                genericError = new Error('Registration failed. Please try again')
+            } else if(error.message.includes('weak password')){
+                genericError = new Error('Password does not match security requirements')
+            } else {
+                genericError = new Error('Registration failed. Please try again')
+            }//end else
+
+                //enforces minimum execution time
+                const elapsed = Date.now() - startTime
+                const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
+
+                if(remaining > 0){
+                    this.constantTimeDelay(remaining)
+                }//end if
+
+                return {data: null, error: genericError}
+        }//end if
+
+        //successful registration
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, MIN_EXECUTION_TIME - elapsed)
+        if(remaining > 0){
+            this.constantTimeDelay(remaining)
+        }//end if
+
+        this.notify('auth:signup', data.user)
+        return {data, error: null}
+    } catch (err){
+        //catch all with constant timing
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0,MIN_EXECUTION_TIME - elapsed)
+        if(remaining > 0){
+            this.constantTimeDelay(remaining)
+        }//end if
+
+        return {
+            data: null,
+            err: new Error('Registration Failed. Try Again')
+        }//end return
     }//end catch
   }//end signUp protection
+
+  isValidEmailConstantTime(email){
+    //executes same amount of operations 
+    const operations = 1000
+    let isValid = true
+
+    //email regex
+    for(let i=0; i < operations; i++){
+        if(i === 500){
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+            isValid = emailRegex.test(email || '')
+        } else {
+            //performs dummy
+            Math.sqrt(i) * Math.random()
+        }//end else
+    }//end for
+    return isValid
+  }//end valid email
+
+  //password strength check
+  checkPasswordtrengthConstantTime(password){
+    const checks = [
+         { regex: /.{8,}/, message: 'Password must be at least 8 characters' },
+      { regex: /[A-Z]/, message: 'Password must contain an uppercase letter' },
+      { regex: /[a-z]/, message: 'Password must contain a lowercase letter' },
+      { regex: /\d/, message: 'Password must contain a number' },
+      { regex: /[@$!%*?&]/, message: 'Password must contain a special character (@$!%*?&)' }
+    ]//end checks
+    
+  }//end password check
 
   //hash string (consistent timing)
   static async hashString(str){

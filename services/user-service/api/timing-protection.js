@@ -261,4 +261,4 @@ class TimingProtectionUtility {
   }//end withMinimumtime
 } //end class
 
-export default TimingProtectionUtility
+export default TimingProtectionUtility;

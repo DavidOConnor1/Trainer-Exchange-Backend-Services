@@ -58,6 +58,49 @@ try{
                 timestamp: new Date().toISOString()
             });
         });
+
+        //display all the available routes 
+        console.log('Available Routes');
+        console.log('Get /health');
+        console.log('GET /api/health/circuit-breaker (status)');
+        console.log('POST /api/admin/reset-circuit-breakers');
+        console.log('GET /api/public/collections (PUBLIC)');
+        console.log('PROTECTED ROUTES');
+        console.log('GET /api/collections');
+        console.log('POST /api/collections');
+        console.log('GET /api/collections/:id/cards');
+        console.log('POST /api/collections/:id/cards');
+
+        //logs circuit breaker
+        if(nodeEnv === 'development'){
+            setInterval(() => {
+                const status = circuitManager.getStatus();
+                const openBreakers = Object.values(status).filter(b => b.state === 'OPEN');
+                if(openBreakers.length > 0){
+                    console.warn('Open Circuit Breakers: ',openBreakers);
+                }//end if 
+            }, 30000);
+        }//end if 
+
+        const gracefulShutdown = () => {
+            console.log('Beginning to shutdown, closing server...');
+
+            httpServer.close(() => {
+                console.log('Server closed gracefully');
+
+                //logs final circuit breaker status 
+                console.log('Final Circuit breaker status: ');
+                console.log(JSON.stringify(circuitManager.getStatus(), null, 2));
+
+                process.exit(0);
+            });
+
+            //force shutdown if graceful was not successful
+            setTimeout(() => {
+                console.error('Could not close connections in time, force shutdown');
+                process.exit(1);
+            }, 10000);
+        }//end graceful shut down
     });
 } catch(error){
 

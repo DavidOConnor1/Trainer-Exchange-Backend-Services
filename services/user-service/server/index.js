@@ -244,6 +244,30 @@ class UserManagerServer {
         this.app.use('*', (req,res) => {
             res.status(404).json({error: 'endpoint not found'});
         });
+
+        //errorhandling
+        setupErrorHandling(){
+            //global error handling
+            this.app.use((error, req, res, next) => {
+                this.logger.error(`Unhandled Error: ${error.message}`, {
+                    reqId: req.id,
+                    url: req.url,
+                    method: req.method,
+                    stack: error.stack
+                });
+
+                //avoids exposing internal errors
+                const status = error.status || 500;
+                const message = status === 500? 'Internal Server Error' : error.message;
+
+                res.status(status).json({
+                    error:message,
+                    requestedId: req.id
+                });
+            });
+        }//end error handling
+
+        start(port)
     }//end routes
 
 }//end user manager server

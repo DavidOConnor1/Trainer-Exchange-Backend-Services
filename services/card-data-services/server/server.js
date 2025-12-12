@@ -27,11 +27,31 @@ const PORT = process.env.PORT || 5000;
 */
 
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || '',
-    credentials: true
+    origin: process.env.NODE_ENV === 'development'
+    ? process.env.CORS_ORIGIN
+    :['http://localhost:3000', 'http://127.0.0.1:3000'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT',  'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
 
 app.use(express.json());
+
+//checking requests
+app.use((req, res, next) => {
+    console.log('=== INCOMING REQUEST ===');
+    console.log('Method:', req.method);
+    console.log('URL:', req.url);
+    console.log('Headers:', req.headers);
+    console.log('Query:', req.query);
+    console.log('Body:', req.body);
+    console.log('=== END REQUEST ===');
+    next();
+});
+
+
 
 /**
  * 
@@ -100,6 +120,19 @@ const validateCardId = (req, res, next) => {
     next();
 }; //end validate card ID 
 
+const fetchCardById = async(id) => {
+    try{
+        const card = await pokemonAPI.fetchCardById(id);
+        return {
+            success: true,
+            data: card
+        };
+    } catch(error){
+        throw new Error(`Failed to fetch card: ${error.message}`) ;
+    }//end catch
+} //end fetch card by id 
+
+
 //validate search query 
 
 const validateSearchQuery = (req, res, next) => {
@@ -142,178 +175,92 @@ app.get('/api/status', (req, res) => {
             uptime: process.uptime(),
             apiCalls: apiCallLog.length,
             recentErrors: errors.slice(-10),
-            cacheHits: apiCallLog.filter(log => log.status === 'sucess').length,
+            cacheHits: apiCallLog.filter(log => log.status === 'success').length,
             lastApiCall: apiCallLog[apiCallLog.length -1]
         }
     });
 });
 
-// Fetch card by ID
-app.get("/api/cards/:id", async (req, res) => {
-    try {
-        const card = await fetchCardById(req.params.id);
-        res.json(card);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }//end catch
-});
+
 
 //  search endpoint
-app.get("/api/cards/search", async (req, res) => {
+app.get("/api/cards/search", validateSearchQuery, async (req, res) => {
     try {
-        const query = req.query.q;
+        // Extract parameters
+        const { 
+            q, 
+            name, 
+            type, 
+            set, 
+            rarity, 
+            hp,
+            page = 1, 
+            pageSize = 20,
+            orderBy = 'name',
+            ...otherParams 
+        } = req.query;
         
-        // If only 'q' parameter is provided, it's a simple search
-        if (query && Object.keys(req.query).length === 1) {
-            const results = await searchCards(query);
-            return res.json({
-                success: true,
-                data: results,
-                count: results.length,
-                searchType: 'simple'
+        // Build search parameters object
+        const searchParams = {};
+        
+        // Priority: Use direct q parameter if provided
+        if (q) {
+            searchParams.q = q;
+        } //end if
+        // Otherwise use specific fields
+        else {
+            if (name) searchParams.name = name;
+            if (type) searchParams.type = type;
+            if (set) searchParams.set = set;
+            if (rarity) searchParams.rarity = rarity;
+            if (hp) searchParams.hp = hp;
+            
+            // Add any other parameters that might be query fields
+            Object.entries(otherParams).forEach(([key, value]) => {
+                if (key.startsWith('q_')) {
+                    // Support q_name, q_type, etc.
+                    const field = key.substring(2);
+                    searchParams[field] = value;
+                }
             });
-        }//end if
+        }//end else
         
-        // Otherwise, it's an advanced search with multiple parameters
-        const results = await searchCards(req.query);
+        //debugger logs
+        console.log('Processing search:');
+        console.log('Query params:', req.query);
+        console.log('Search params:', searchParams);
+        
+        const results = await searchCards(searchParams, {
+            page: parseInt(page),
+            pageSize: parseInt(pageSize),
+            orderBy: orderBy
+        });
+        
         res.json({
             success: true,
             data: results,
             count: results.length,
-            searchType: 'advanced'
-        });
-        
-    } catch (err) {
-        res.status(500).json({ 
-            success: false,
-            error: err.message 
-        });
-    }//end catch
-});//end search
-
-// Paginated search
-app.get("/api/cards/search/paginated", async (req, res) => {
-    try {
-        const { q, page = 1, pageSize = 20 } = req.query;
-        
-        let results;
-        if (q) {
-            // Search with query string
-            results = await searchCardsPaginated(q, parseInt(page), parseInt(pageSize));
-        } else {
-            // Search with object parameters
-            const params = { ...req.query };
-            delete params.page;
-            delete params.pageSize;
-            results = await searchCardsPaginated(params, parseInt(page), parseInt(pageSize));
-        }//end else
-        
-        res.json({
-            success: true,
-            data: results,
             pagination: {
                 page: parseInt(page),
                 pageSize: parseInt(pageSize),
-                count: results.length
+                total: results.length
+            },
+            query: {
+                original: req.query,
+                processed: searchParams
             }
         });
         
     } catch (err) {
+        console.error('Search endpoint error:', err);
         res.status(500).json({ 
             success: false,
             error: err.message 
         });
-    }//end catch
-}); //end paginated search.
+    }//catch
+}); //end search
 
-// Search by name only
-app.get("/api/cards/search/name/:name", async (req, res) => {
-    try {
-        const { page = 1, pageSize = 20 } = req.query;
-        const results = await searchCardsByName(req.params.name, {
-            page: parseInt(page),
-            pageSize: parseInt(pageSize)
-        });
-        
-        res.json({
-            success: true,
-            data: results,
-            count: results.length
-        });
-        
-    } catch (err) {
-        res.status(500).json({ 
-            success: false,
-            error: err.message 
-        });
-    }//end catch
-}); //end search name only
 
-// Search by type
-app.get("/api/cards/search/type/:type", async (req, res) => {
-    try {
-        const { page = 1, pageSize = 20 } = req.query;
-        const results = await searchCardsByType(req.params.type, {
-            page: parseInt(page),
-            pageSize: parseInt(pageSize)
-        });
-        
-        res.json({
-            success: true,
-            data: results,
-            count: results.length
-        });
-        
-    } catch (err) {
-        res.status(500).json({ 
-            success: false,
-            error: err.message 
-        });
-    }//end catch
-}); //end search by type
-
-// Search by set
-app.get("/api/cards/search/set/:set", async (req, res) => {
-    try {
-        const { page = 1, pageSize = 20 } = req.query;
-        const results = await searchCardsBySet(req.params.set, {
-            page: parseInt(page),
-            pageSize: parseInt(pageSize)
-        });
-        
-        res.json({
-            success: true,
-            data: results,
-            count: results.length
-        });
-        
-    } catch (err) {
-        res.status(500).json({ 
-            success: false,
-            error: err.message 
-        });
-    }//end catch
-}); //end search by set
-
-// Advanced multi-criteria search
-app.get("/api/cards/search/advanced", async (req, res) => {
-    try {
-        const results = await searchByMultipleCriteria(req.query);
-        
-        res.json({
-            success: true,
-            data: results,
-            count: results.length,
-            criteria: req.query
-        });
-        
-    } catch (err) {
-        res.status(500).json({ 
-            success: false,
-            error: err.message 
-        });
-    }//end catch
-}); //end multi-criteria search
 
 //admin endpoint
 app.get("/api/admin/call-log", (req,res) => {
@@ -326,6 +273,70 @@ app.get("/api/admin/call-log", (req,res) => {
         count: apiCallLog.length
     });
 }); //end
+
+// Add to server.js
+app.get('/api/debug/query-test', async (req, res) => {
+    try {
+        const testQueries = [
+            'name:pikachu*',      // Wildcard after name
+            'name:"pikachu"',     // Exact match with quotes
+            'name:pikachu',       // Simple name
+            'name:"pikachu"*',    // Your current format
+            'pikachu',            // Simple search
+        ];
+        
+        const results = [];
+        
+        for (const query of testQueries) {
+            try {
+                console.log(`🔍 Testing query: ${query}`);
+                const startTime = Date.now();
+                
+                const data = await pokemonAPI.fetchCards({
+                    page: 1,
+                    pageSize: 2,
+                    q: query
+                });
+                
+                const duration = Date.now() - startTime;
+                
+                results.push({
+                    query,
+                    success: true,
+                    duration: `${duration}ms`,
+                    cardsFound: Array.isArray(data) ? data.length : 'unknown',
+                    firstCard: Array.isArray(data) && data.length > 0 ? data[0].name : 'none'
+                });
+                
+                console.log(`✅ ${query}: ${duration}ms, ${Array.isArray(data) ? data.length : 'error'} cards`);
+                
+            } catch (error) {
+                results.push({
+                    query,
+                    success: false,
+                    error: error.message,
+                    duration: 'failed'
+                });
+                console.log(`❌ ${query}: ${error.message}`);
+            }
+            
+            // Wait a bit between tests
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        res.json({
+            success: true,
+            tests: results,
+            recommendation: results.find(r => r.success)?.query || 'none worked'
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 
 //clear cache
 app.post("/api/admin/clear-cache", (req,res) => {

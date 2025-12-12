@@ -1,198 +1,183 @@
 import { pokemonAPI } from "../api/APIClient.js";  
+import searchCache from "../cache/SearchCache.js";
 
-// Query Sanitization to prevent any sort of attacks on the system
-
+// Query Sanitization
 export class QuerySanitizer {
     static sanitizeString(input) {
-        if (typeof input !== 'string') {
-            return '';
-        }//end if
-
-       
-        // Allow letters, numbers, spaces, hyphens, and apostrophes
+        if (typeof input !== 'string') return '';
         const sanitized = input.replace(/[^a-zA-Z0-9\s\-']/g, '');
-
-        // trim and limit length
         return sanitized.trim().slice(0, 100);
-    } // end sanitizeString
+    }//end sanitize String
 
-    // sanitize objects
     static sanitizeQueryObject(params) {  
+        if (!params || typeof params !== 'object') return {};
         const sanitized = {};
-        
-        // Handle null/undefined params
-        if (!params || typeof params !== 'object') {
-            return sanitized;
-        }
         
         for (const [key, value] of Object.entries(params)) {
             if (typeof value === 'string') {
                 sanitized[key] = this.sanitizeString(value);
             } else if (typeof value === 'number') {
-                sanitized[key] = isFinite(value) ? value : 0;  // Handle NaN/Infinity
+                sanitized[key] = isFinite(value) ? value : 0;
             } else if (Array.isArray(value)) {
                 sanitized[key] = value.map(item => 
                     typeof item === 'string' ? this.sanitizeString(item) : item
                 );
             } else if (typeof value === 'object' && value !== null) {
-                // Recursively sanitize nested objects
                 sanitized[key] = this.sanitizeQueryObject(value);
             } else {
                 sanitized[key] = value;
-            }
-        }
+            }//end elese
+        }//end for
         return sanitized;
-    } // end sanitizeQueryObject
+    }//end sanitize obj
 
     static validateCardName(name) {
-        if (!name || typeof name !== 'string') return null;  
-
-        // simple validation for card names
-        const sanitizedName = this.sanitizeString(name);  
-
-        // ensure name does not return blank
+        if (!name || typeof name !== 'string') return null;
+        const sanitizedName = this.sanitizeString(name);
         if (!sanitizedName.trim()) return null;
-
-        // check the length
         if (sanitizedName.length > 30) return null;
-
         return sanitizedName;
-    } // end validateCardName
-} // end query sanitizer
+    }//end validate card name
+}//end query sanitizer
 
-
-export async function searchCards(params) {
-    // If params is a string, perform simple search
-    if (typeof params === 'string') {
-        const sanitized = QuerySanitizer.validateCardName(params);
+/**
+ * Builds a proper q parameter for Pokemon TCG API
+ */
+function buildQueryString(params = {}) {
+    const queryParts = [];
     
-        if (!sanitized) {
-            console.warn(`Invalid Search Query: ${params}`);
-            return [];
-        }//end
+    // Handle name search - USE WILDCARD BY DEFAULT
+    if (params.name) {
+        const name = params.name.trim();
+        queryParts.push(`name:${name}*`);
+    }//end if
     
-        try {
-            const result = await pokemonAPI.fetchCards({
-                q: `name:${sanitized}*`,  // wildcard 
-                pageSize: 50  // Increased from 20 for better results
-            });
-            return Array.isArray(result) ? result : [];
-        } catch (error) {
-            // Fixed variable name from sanitizedName to sanitized
-            console.error(`Error searching for "${sanitized}":`, error);
-            return [];
-        }//end catch
-    }//end searchCards
+    // Handle type search
+    if (params.type) {
+        queryParts.push(`types:${params.type}`);
+    }//end if
+    
+    // Handle set search
+    if (params.set) {
+        queryParts.push(`set.name:${params.set}*`);
+    }//end if
+    
+    // Handle rarity search
+    if (params.rarity) {
+        queryParts.push(`rarity:${params.rarity}`);
+    }//end if
+    
+    // Handle HP search (numeric)
+    if (params.hp) {
+        queryParts.push(`hp:${params.hp}`);
+    }//end if
+    
+    // Handle direct q parameter
+    if (params.q) {
+        if (queryParts.length > 0) {
+            queryParts.push(params.q);
+        } else {
+            return params.q;
+        }//end else
+    }//end if
+    
+    if (queryParts.length === 0) {
+        return '';
+    }//end if
+    
+    return queryParts.join(' ');
+}//end query builder
 
-    // If params is an object, perform advanced search
-    if (typeof params === 'object' && params !== null) {
-        // First sanitize the input params
+/**
+ Search function
+ */
+export async function searchCards(params = {}, options = {}) {
+    try {
+        //cache key
+          const cacheKey = { params, options };
+        const cached = searchCache.get(cacheKey);
+        if (cached) {
+            return cached;
+        }//end if
+
+
+        // Handle string input (simple name search)
+        if (typeof params === 'string') {
+            const sanitizedName = QuerySanitizer.validateCardName(params);
+            if (!sanitizedName) return [];
+            
+            params = { name: sanitizedName };
+        }
+        
+        // Sanitize all parameters
         const sanitizedParams = QuerySanitizer.sanitizeQueryObject(params);
         
-        // Set defaults
-        const searchParams = {
-            page: 1,
-            pageSize: 20,
-            orderBy: 'name',
-            ...sanitizedParams
-        };
-
+        // Build the query string for external API
+        const queryString = buildQueryString(sanitizedParams);
         
-        try {
-            const result = await pokemonAPI.fetchCards(searchParams);
-            return Array.isArray(result) ? result : [];
-        } catch (error) {
-            console.error('Error with the advanced search: ', error, { params: searchParams });
-            return [];
-        }//end catch
-    }//end if
+        // Prepare API parameters - ONLY q, page, pageSize, orderBy
+        const apiParams = {
+            page: Math.max(1, options.page || sanitizedParams.page || 1),
+            pageSize: Math.min(10, Math.max(1, options.pageSize || sanitizedParams.pageSize || 10)),
+            orderBy: options.orderBy || sanitizedParams.orderBy || 'name'
+        };
+        
+        
+        if (queryString.trim()) {
+            apiParams.q = queryString;
+        }//end if
+        
+        console.log('Search Details:');
+        console.log('Input params:', sanitizedParams);
+        console.log('Built query:', queryString);
+        console.log('API params:', apiParams);
+        
+        // Make the API call
+        const result = await pokemonAPI.fetchCards(apiParams);
+        
+        
+        // We need to extract the data array
+        let cards = [];
+        if (result && typeof result === 'object') {
+            if (Array.isArray(result.data)) {
+                cards = result.data;
+            } else if (Array.isArray(result)) {
+                cards = result;
+            }//end else if 
+        }//end if
+        
+        console.log(`Found ${cards.length} cards`);
+        searchCache.set(cacheKey, cards);
+        return cards;
+        
+    } catch (error) {
+        console.error('Search error:', error.message);
+        return [];
+    }//end catch
+}//end search
 
-    // Invalid input, return nothing
-    console.warn('Invalid search params: ', params);
-    return [];
-} // end searchCards
+// Keep these for backward compatibility
+export async function searchCardsPaginated(query, page = 1, pageSize = 20) {
+    return searchCards(query, { page, pageSize });
+}
 
-// Helps with paginated searches
-export async function searchCardsPaginated(params, page = 1, pageSize = 20) {
-    const searchParams = typeof params === 'string'
-        ? { q: `name:${QuerySanitizer.validateCardName(params) || ''}*` }
-        : QuerySanitizer.sanitizeQueryObject(params);
+export async function searchCardsByName(name, options = {}) {
+    return searchCards({ name }, options);
+}
 
-    // Use our main searchCards function with pagination
-    return searchCards({
-        ...searchParams,
-        page: Math.max(1, page),
-        pageSize: Math.min(100, Math.max(1, pageSize))
-    });
-} // end function
+export async function searchCardsByType(type, options = {}) {
+    return searchCards({ type }, options);
+}
 
-// Get total amount of cards for matching search
+export async function searchCardsBySet(setName, options = {}) {
+    return searchCards({ set: setName }, options);
+}
+
+export async function searchByMultipleCriteria(criteria = {}, options = {}) {
+    return searchCards(criteria, options);
+}
+
 export async function getSearchCount(params) {
     const cards = await searchCards(params);
     return cards.length;
-} // end function
-
-
-
-export async function searchCardsByName(name, options = {}) {
-    const sanitizedName = QuerySanitizer.validateCardName(name);
-    if (!sanitizedName) return [];
-    
-    return searchCards({
-        q: `name:${sanitizedName}*`,
-        ...options
-    });
-}//end
-
-export async function searchCardsByType(type, options = {}) {
-    const sanitizedType = QuerySanitizer.sanitizeString(type);
-    if (!sanitizedType) return [];
-    
-    return searchCards({
-        q: `types:${sanitizedType}`,
-        ...options
-    });
-}//end
-
-export async function searchCardsBySet(setName, options = {}) {
-    const sanitizedSet = QuerySanitizer.sanitizeString(setName);
-    if (!sanitizedSet) return [];
-    
-    return searchCards({
-        q: `set.name:${sanitizedSet}*`,
-        ...options
-    });
-}//end search by set
-
-// Get cards with multiple criteria
-export async function searchByMultipleCriteria(criteria = {}) {
-    const queryParts = [];
-    const { name, type, set, rarity, ...otherParams } = criteria;
-    
-    if (name) {
-        const sanitizedName = QuerySanitizer.validateCardName(name);
-        if (sanitizedName) queryParts.push(`name:${sanitizedName}*`);
-    }//end
-    
-    if (type) {
-        const sanitizedType = QuerySanitizer.sanitizeString(type);
-        if (sanitizedType) queryParts.push(`types:${sanitizedType}`);
-    }//end
-    
-    if (set) {
-        const sanitizedSet = QuerySanitizer.sanitizeString(set);
-        if (sanitizedSet) queryParts.push(`set.name:${sanitizedSet}*`);
-    }//end
-    
-    if (rarity) {
-        const sanitizedRarity = QuerySanitizer.sanitizeString(rarity);
-        if (sanitizedRarity) queryParts.push(`rarity:${sanitizedRarity}`);
-    }//end 
-    
-    if (queryParts.length === 0) return [];
-    
-    return searchCards({
-        q: queryParts.join(' '),
-        ...otherParams
-    });
-}//end search
+}

@@ -23,7 +23,7 @@ if(missingVars.length > 0){
 }//end if
 
 //env var with defaults
-const port = process.env.PORT || 4000;
+const port = process.env.POORT || 4000;
 const nodeEnv = process.env.NODE_ENV || 'development';
 
 //Log message 

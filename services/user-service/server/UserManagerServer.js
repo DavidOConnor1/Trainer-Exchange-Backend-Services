@@ -32,8 +32,8 @@ class UserManagerServer {
 
     initSupabaseAdmin(){
         //service role for admins, will come back and use this code later in dev
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const supabaseUrl = process.env.PROJECT_URL;
+        const serviceRoleKey = process.env.ANONKEY;
 
         if(!supabaseUrl || !serviceRoleKey){
             this.logger.error('Missing Supabase Admin Credentials');
@@ -51,7 +51,7 @@ class UserManagerServer {
             contentSecurityPolicy: {
                 directives: {
                     defaultSrc: ["'self'"],
-                    connectSrc: ["'self'", process.env.SUPABASE_URL]
+                    connectSrc: ["'self'", process.env.PROJECT_URL]
                 }
             }
         })); //end helment config
@@ -269,7 +269,7 @@ class UserManagerServer {
     }//end error handling
 
     //start server code
-    start(port = process.env.PORT || 4000){
+    start(port = process.env.POORT || 4000){
         return new Promise((resolve) => {
             const server = this.app.listen(port, () => {
                 this.logger.info(`Server running on Port: ${port}`);

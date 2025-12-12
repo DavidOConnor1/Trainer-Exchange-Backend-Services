@@ -1,5 +1,6 @@
-import fetch, { Headers } from "node-fetch";
+import fetch from "node-fetch";
 import { POKEMON_TCG_API_BASE_URL, HEADERS } from "./config.js";
+
 
 // Observer Pattern Implementation
 class APIObserver {
@@ -48,111 +49,89 @@ class PokemonAPI {
     }//end get instance
 
     async makeRequest(endpoint, params = null) {
-        const url = params
-            ? `${endpoint}?${new URLSearchParams(params).toString()}`
-            : endpoint;
+    const baseUrl = POKEMON_TCG_API_BASE_URL;
+    const fullEndpoint = endpoint.startsWith('http') 
+        ? endpoint 
+        : `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    
+    const url = params
+        ? `${fullEndpoint}?${new URLSearchParams(params).toString()}`
+        : fullEndpoint;
 
-        const cacheKey = url;
+    console.log('makeRequest Details:');
+    console.log('Full URL:', url);
+    
+    const cacheKey = url;
 
-        // Check cache first
-        if (this.cache.has(cacheKey)) {
-            PokemonAPI.observer.notify('cacheHit', {
-                endpoint: url,
-                timestamp: new Date().toISOString()
-            });
-            return this.cache.get(cacheKey);
-        }
+    // Check cache first
+    if (this.cache.has(cacheKey)) {
+        PokemonAPI.observer.notify('cacheHit', { endpoint: url });
+        console.log('Returning from cache');
+        return this.cache.get(cacheKey);
+    }
 
-        // Log the API call
-        const callId = Date.now();
-        this.apiCallLog.set(callId, {
-            endpoint: url,
-            timestamp: new Date().toISOString(),
-            status: 'pending'
-        });
-
-        PokemonAPI.observer.notify('apiCallStart', {
-            callId,
-            endpoint: url,
-            timestamp: new Date().toISOString()
-        });
-
+    // Retry logic
+    const maxRetries = 3;
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+            console.log(`🔄 Attempt ${attempt}/${maxRetries}`);
+            
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 45000); // 45 seconds
+            
+            const startTime = Date.now();
             const res = await fetch(url, {
                 headers: HEADERS,
+                signal: controller.signal
             });
-
+            clearTimeout(timeout);
+            
+            const duration = Date.now() - startTime;
+            console.log(`Request successful in ${duration}ms`);
+            
             if (!res.ok) {
-                const errorData = {
-                    callId,
-                    endpoint: url,
-                    status: res.status,
-                    timestamp: new Date().toISOString()
-                };
-                
-                this.apiCallLog.set(callId, {
-                    ...this.apiCallLog.get(callId),
-                    status: 'error',
-                    error: `HTTP ${res.status}`,
-                    response: null
-                });
-
-                PokemonAPI.observer.notify('apiCallError', errorData);
-                throw new Error(`Failed to fetch: ${res.status}`);
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
 
             const data = await res.json();
             const responseData = data.data || data;
 
-            // Update log with success
-            this.apiCallLog.set(callId, {
-                ...this.apiCallLog.get(callId),
-                status: 'success',
-                response: responseData,
-                completedAt: new Date().toISOString()
-            });
-
+            console.log(`Received ${Array.isArray(responseData) ? responseData.length : '1'} items`);
+            
             // Cache the response
             this.cache.set(cacheKey, responseData);
-
-            PokemonAPI.observer.notify('apiCallSuccess', {
-                callId,
-                endpoint: url,
-                timestamp: new Date().toISOString(),
-                dataLength: Array.isArray(responseData) ? responseData.length : 1
-            });
-
+            
             return responseData;
 
         } catch (error) {
-            const errorData = {
-                callId,
-                endpoint: url,
-                error: error.message,
-                timestamp: new Date().toISOString()
-            };
+            lastError = error;
+            console.log(`❌ Attempt ${attempt} failed:`, error.message);
             
-            this.apiCallLog.set(callId, {
-                ...this.apiCallLog.get(callId),
-                status: 'error',
-                error: error.message
-            });
-
-            PokemonAPI.observer.notify('apiCallError', errorData);
-            throw error;
-        }//end catch
-    }//end makeRequest
+            if (attempt < maxRetries) {
+                // Wait before retrying (exponential backoff)
+                const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+                console.log(`Waiting ${delay}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+    
+    // All retries failed
+    console.error('All retries failed:', lastError.message);
+    throw lastError;
+}//end make request
 
     // Fetch a single card by its id
     async fetchCardById(cardId) {
-        const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards/${cardId}`;
+        const endpoint = `/cards/${cardId}`;
         return this.makeRequest(endpoint);
     } //end fetchCardById
 
     // Fetch multiple cards with query parameters
     async fetchCards(params = {}) {
-        const endpoint = `${POKEMON_TCG_API_BASE_URL}/cards`;
-        return this.makeRequest(endpoint, params);
+        return this.makeRequest('/cards', params);
     }//end fetch cards
 
     // Get API call history

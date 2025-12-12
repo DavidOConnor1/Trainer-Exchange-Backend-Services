@@ -69,5 +69,33 @@ class CircuitBreaker {
 }//end circuit breaker
 
 //singleton implementation for shared circuit breakers
+class CircuitBreakerManager {
+    constructor(){
+        this.breakers = new Map();
+    }//end constructor
 
-class 
+    getBreaker(name, options){
+        if(!this.breakers.has(name)){
+            this.breakers.set(name, new CircuitBreaker(name, options));
+        }//end if 
+        return this.breakers.get(name);
+    }//end get breaker
+
+    getStatus(){
+        const status = {};
+        for(const [name, breaker] of this.breakers){
+            status[name] = breaker.getStatus();
+        }//end for
+        return status;
+    }//end get status
+
+    resetAll(){
+        for(const breaker of this.breakers.values()){
+            breaker.reset();
+        }//end for
+    }//end restAll
+}//end circuit breaker manager
+
+//export singleton
+export const circuitManager = new CircuitBreakerManager();
+export default circuitManager;

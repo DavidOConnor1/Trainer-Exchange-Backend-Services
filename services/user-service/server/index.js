@@ -100,8 +100,17 @@ try{
                 console.error('Could not close connections in time, force shutdown');
                 process.exit(1);
             }, 10000);
+
+            //handle various shutdown signals
+            process.on('SIGTERM', gracefulShutdown);
+            process.on('SIGINT', gracefulShutdown);
+            process.on('SIGUSR2', gracefulShutdown);
         }//end graceful shut down
+    }).catch((error) => {
+        console.error('Failed to start server: ',error);
+        process.exit(1);
     });
 } catch(error){
-
+    console.error('Failure to intialize server: ',error);
+    process.exit(1);
 }//end catch

@@ -4,17 +4,17 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
-import { pokemonAPI, apiObserver } from './card-data-services/api/APIClient.js';
+import { pokemonAPI, apiObserver } from '../api/APIClient.js';
 import { searchCards,
     searchCardsPaginated,
     searchCardsByName,
     searchCardsByType,
     searchCardsBySet,
-    searchByMultipleCriteria } from './card-data-services/search-service/SearchIndex.js';
-import { QuerySanitizer } from './card-data-services/search-service/SearchIndex.js';
+    searchByMultipleCriteria } from '../search-service/SearchIndex.js';
+import { QuerySanitizer } from '../search-service/SearchIndex.js';
 
 //import logging and observers
-import { LoggingObserver, ErrorTrackingObserver } from './card-data-services/api/APIClient.js';
+import { LoggingObserver, ErrorTrackingObserver } from '../api/APIClient.js';
 
 
 dotenv.config();

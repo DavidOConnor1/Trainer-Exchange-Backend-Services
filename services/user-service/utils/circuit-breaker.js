@@ -98,4 +98,4 @@ class CircuitBreakerManager {
 
 //export singleton
 export const circuitManager = new CircuitBreakerManager();
-export default circuitManager;
+export  {circuitManager};

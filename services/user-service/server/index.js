@@ -8,6 +8,7 @@ import crypto from 'crypto';
 //import methods from service classes
 import { TimingProtectionUtility } from "../api/timing-protection.js";
 import { supabaseService } from "../api/APIClient.js";
+import { resolve } from "path";
 
 
 class UserManagerServer {
@@ -244,6 +245,7 @@ class UserManagerServer {
         this.app.use('*', (req,res) => {
             res.status(404).json({error: 'endpoint not found'});
         });
+    
 
         //errorhandling
         setupErrorHandling(){
@@ -267,7 +269,23 @@ class UserManagerServer {
             });
         }//end error handling
 
-        start(port)
+        start(port = process.env.PORT || 4000){
+            return new Promise((resolve) => {
+                const server = this.app.listen(port, () => {
+                    this.logger.info(`Server running on Port: ${port}`);
+                    resolve(server);
+                });
+            }); 
+        }//end start
     }//end routes
+
+    if(import.meta.url === `file://${process.argv[1]}`){
+        const server = new UserManagerServer();
+
+        server.start().catch((error) => {
+            console.error('failed to start server:', error);
+            process.exit(1);
+        });
+    }
 
 }//end user manager server

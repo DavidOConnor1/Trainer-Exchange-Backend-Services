@@ -1,162 +1,364 @@
-import { pokemonAPI } from "../api/APIClient.js";  
+import { pokemonAPI, QuerySanitizer, searchCards as tcgdexSearch } from "../api/APIClient.js";
+import TCGdex, { Query } from '@tcgdex/sdk';  
 import searchCache from "../cache/SearchCache.js";
 
-// Query Sanitization
-export class QuerySanitizer {
-    static sanitizeString(input) {
-        if (typeof input !== 'string') return '';
-        const sanitized = input.replace(/[^a-zA-Z0-9\s\-']/g, '');
-        return sanitized.trim().slice(0, 100);
-    }//end sanitize String
-
-    static sanitizeQueryObject(params) {  
-        if (!params || typeof params !== 'object') return {};
-        const sanitized = {};
-        
-        for (const [key, value] of Object.entries(params)) {
-            if (typeof value === 'string') {
-                sanitized[key] = this.sanitizeString(value);
-            } else if (typeof value === 'number') {
-                sanitized[key] = isFinite(value) ? value : 0;
-            } else if (Array.isArray(value)) {
-                sanitized[key] = value.map(item => 
-                    typeof item === 'string' ? this.sanitizeString(item) : item
-                );
-            } else if (typeof value === 'object' && value !== null) {
-                sanitized[key] = this.sanitizeQueryObject(value);
-            } else {
-                sanitized[key] = value;
-            }//end elese
-        }//end for
-        return sanitized;
-    }//end sanitize obj
-
-    static validateCardName(name) {
-        if (!name || typeof name !== 'string') return null;
-        const sanitizedName = this.sanitizeString(name);
-        if (!sanitizedName.trim()) return null;
-        if (sanitizedName.length > 30) return null;
-        return sanitizedName;
-    }//end validate card name
-}//end query sanitizer
-
 /**
- * Builds a proper q parameter for Pokemon TCG API
+ * Builds search parameters for TCGdex SDK with advanced options
  */
-function buildQueryString(params = {}) {
-    const queryParts = [];
+function buildSearchParams(params = {}) {
+    const searchParams = {};
     
-    // Handle name search - USE WILDCARD BY DEFAULT
+    // Handle name search with exact match option
     if (params.name) {
-        const name = params.name.trim();
-        queryParts.push(`name:${name}*`);
-    }//end if
+        searchParams.name = params.name;
+        searchParams.exactName = params.exactName || false;
+    }
     
-    // Handle type search
-    if (params.type) {
-        queryParts.push(`types:${params.type}`);
-    }//end if
+    // Handle type search (can be single or multiple)
+    if (params.type || params.types) {
+        searchParams.types = params.type ? [params.type] : params.types;
+    }
     
     // Handle set search
-    if (params.set) {
-        queryParts.push(`set.name:${params.set}*`);
-    }//end if
+    if (params.set || params.setId) {
+        searchParams.set = params.set || params.setId;
+    }
     
-    // Handle rarity search
+    // Handle rarity
     if (params.rarity) {
-        queryParts.push(`rarity:${params.rarity}`);
-    }//end if
+        searchParams.rarity = params.rarity;
+    }
     
-    // Handle HP search (numeric)
+    // Handle HP range
     if (params.hp) {
-        queryParts.push(`hp:${params.hp}`);
-    }//end if
+        if (typeof params.hp === 'string' && params.hp.includes('-')) {
+            const [min, max] = params.hp.split('-').map(Number);
+            if (!isNaN(min)) searchParams.minHp = min;
+            if (!isNaN(max)) searchParams.maxHp = max;
+        } else if (!isNaN(parseInt(params.hp))) {
+            searchParams.minHp = parseInt(params.hp);
+            searchParams.maxHp = parseInt(params.hp);
+        }
+    }
     
-    // Handle direct q parameter
+    // Handle direct minHp/maxHp
+    if (params.minHp) searchParams.minHp = parseInt(params.minHp);
+    if (params.maxHp) searchParams.maxHp = parseInt(params.maxHp);
+    
+    // Handle stage (Basic, Stage 1, Stage 2, etc.)
+    if (params.stage) {
+        searchParams.stage = params.stage;
+    }
+    
+    // Handle retreat cost
+    if (params.retreat !== undefined && params.retreat !== null) {
+        searchParams.retreat = parseInt(params.retreat);
+    }
+    
+    // Handle ability keyword search
+    if (params.abilityKeyword) {
+        searchParams.abilityKeyword = params.abilityKeyword;
+    }
+    
+    // Handle attack keyword search
+    if (params.attackKeyword) {
+        searchParams.attackKeyword = params.attackKeyword;
+    }
+    
+    // Handle regulation mark
+    if (params.regulationMark) {
+        searchParams.regulationMark = params.regulationMark;
+    }
+    
+    // Handle sorting
+    if (params.sortBy) {
+        searchParams.sortBy = params.sortBy;
+        searchParams.sortOrder = params.sortOrder || 'ASC';
+    }
+    
+    // Handle q parameter (legacy support)
     if (params.q) {
-        if (queryParts.length > 0) {
-            queryParts.push(params.q);
-        } else {
-            return params.q;
-        }//end else
-    }//end if
+        const qParts = params.q.split(' ');
+        qParts.forEach(part => {
+            if (part.includes(':')) {
+                const [key, value] = part.split(':');
+                const cleanValue = value.replace('*', '');
+                if (key === 'name') searchParams.name = cleanValue;
+                if (key === 'types') searchParams.types = [cleanValue];
+                if (key === 'rarity') searchParams.rarity = cleanValue;
+                if (key === 'set') searchParams.set = cleanValue;
+                if (key === 'stage') searchParams.stage = cleanValue;
+            }
+        });
+    }
     
-    if (queryParts.length === 0) {
-        return '';
-    }//end if
-    
-    return queryParts.join(' ');
-}//end query builder
+    return searchParams;
+}
 
 /**
- Search function
+ * Main search function using TCGdex SDK with full features
  */
 export async function searchCards(params = {}, options = {}) {
     try {
-        //cache key
-          const cacheKey = { params, options };
+        // Generate cache key
+        const cacheKey = { params, options };
         const cached = searchCache.get(cacheKey);
         if (cached) {
+            console.log('📦 Returning from search cache');
             return cached;
-        }//end if
-
+        }
 
         // Handle string input (simple name search)
         if (typeof params === 'string') {
             const sanitizedName = QuerySanitizer.validateCardName(params);
             if (!sanitizedName) return [];
-            
             params = { name: sanitizedName };
         }
         
-        // Sanitize all parameters
+        // Sanitize parameters
         const sanitizedParams = QuerySanitizer.sanitizeQueryObject(params);
         
-        // Build the query string for external API
-        const queryString = buildQueryString(sanitizedParams);
+        // Build search parameters for TCGdex
+        const searchParams = buildSearchParams(sanitizedParams);
         
-        // Prepare API parameters - ONLY q, page, pageSize, orderBy
-        const apiParams = {
-            page: Math.max(1, options.page || sanitizedParams.page || 1),
-            pageSize: Math.min(10, Math.max(1, options.pageSize || sanitizedParams.pageSize || 10)),
-            orderBy: options.orderBy || sanitizedParams.orderBy || 'name'
-        };
+        // Add pagination
+        const page = Math.max(1, options.page || sanitizedParams.page || 1);
+        const pageSize = Math.min(50, Math.max(1, options.pageSize || sanitizedParams.pageSize || 20));
         
-        
-        if (queryString.trim()) {
-            apiParams.q = queryString;
-        }//end if
-        
-        console.log('Search Details:');
+        console.log('🔍 Enhanced Search Details:');
         console.log('Input params:', sanitizedParams);
-        console.log('Built query:', queryString);
-        console.log('API params:', apiParams);
+        console.log('Search params:', searchParams);
+        console.log('Pagination:', { page, pageSize });
         
-        // Make the API call
-        const result = await pokemonAPI.fetchCards(apiParams);
+        // Perform search using TCGdex
+        const result = await pokemonAPI.searchCards({
+            ...searchParams,
+            page,
+            pageSize
+        });
         
+        console.log(`✅ Found ${result.data.length} cards`);
+        if (result.data.length > 0) {
+            console.log(`📊 Sample card: ${result.data[0].name} (${result.data[0].id})`);
+            if (result.data[0].pricing?.cardmarket) {
+                console.log(`💰 Price trend: €${result.data[0].pricing.cardmarket.trend}`);
+            }
+        }
         
-        // We need to extract the data array
-        let cards = [];
-        if (result && typeof result === 'object') {
-            if (Array.isArray(result.data)) {
-                cards = result.data;
-            } else if (Array.isArray(result)) {
-                cards = result;
-            }//end else if 
-        }//end if
+        // Cache the results
+        searchCache.set(cacheKey, result.data);
         
-        console.log(`Found ${cards.length} cards`);
-        searchCache.set(cacheKey, cards);
-        return cards;
+        return result.data;
         
     } catch (error) {
-        console.error('Search error:', error.message);
+        console.error('❌ Search error:', error.message);
         return [];
-    }//end catch
-}//end search
+    }
+}
 
-// Keep these for backward compatibility
+/**
+ * Get complete card details including pricing and relationships
+ */
+export async function getCardDetails(cardId) {
+    try {
+        const card = await pokemonAPI.getCardById(cardId);
+        
+        console.log(`📇 Card details fetched: ${card.name}`);
+        
+        if (card.currentPrice) {
+            console.log(`💰 Cardmarket price: €${card.currentPrice}`);
+            if (card.pricing?.prices?.avg30) {
+                console.log(`📊 30-day average: €${card.pricing.prices.avg30}`);
+            }
+            if (card.pricing?.prices?.trendPrice) {
+                console.log(`📈 Trend price: €${card.pricing.prices.trendPrice}`);
+            }
+        } else {
+            console.log(`💰 No Cardmarket pricing available for this card`);
+        }
+        
+        return card;
+    } catch (error) {
+        console.error('Error fetching card details:', error);
+        return null;
+    }
+}
+
+/**
+ * Get card pricing only (lightweight)
+ */
+export async function getCardPricing(cardId) {
+    try {
+        const pricing = await pokemonAPI.getCardPricing(cardId);
+        return pricing;
+    } catch (error) {
+        console.error('Error fetching card pricing:', error);
+        return null;
+    }
+}
+
+/**
+ * Get all card sets with series information
+ */
+export async function getAllCardSets() {
+    try {
+        const sets = await pokemonAPI.getAllSets();
+        return sets;
+    } catch (error) {
+        console.error('Error fetching sets:', error);
+        return [];
+    }
+}
+
+/**
+ * Get cards by set with pagination
+ */
+export async function getCardsBySet(setId, page = 1, pageSize = 20) {
+    try {
+        const result = await pokemonAPI.getCardsBySet(setId, page, pageSize);
+        return result;
+    } catch (error) {
+        console.error('Error fetching cards by set:', error);
+        return { data: [], hasMore: false };
+    }
+}
+
+/**
+ * Get cards by type
+ */
+export async function getCardsByType(type, page = 1, pageSize = 20) {
+    return searchCards({ types: [type] }, { page, pageSize });
+}
+
+/**
+ * Search by ability text
+ */
+export async function searchByAbility(abilityText, page = 1, pageSize = 20) {
+    const cards = await pokemonAPI.searchByAbility(abilityText, page, pageSize);
+    return cards;
+}
+
+/**
+ * Search by attack name
+ */
+export async function searchByAttack(attackName, page = 1, pageSize = 20) {
+    const cards = await pokemonAPI.searchByAttack(attackName, page, pageSize);
+    return cards;
+}
+
+/**
+ * Get all series with their sets
+ */
+export async function getAllSeriesWithSets() {
+    try {
+        const series = await pokemonAPI.getAllSeriesWithSets();
+        return series;
+    } catch (error) {
+        console.error('Error fetching series:', error);
+        return [];
+    }
+}
+
+/**
+ * Advanced search with complex queries
+ */
+export async function advancedSearch(queryConfig) {
+    try {
+        const results = await pokemonAPI.advancedQuery(queryConfig);
+        return results;
+    } catch (error) {
+        console.error('Advanced search error:', error);
+        return [];
+    }
+}
+
+/**
+ * Search with price filtering (requires additional processing)
+ */
+export async function searchWithPriceFilter(searchParams, minPrice = null, maxPrice = null) {
+    // First get search results
+    let cards = await searchCards(searchParams);
+    
+    // Filter by price if specified
+    if (minPrice !== null || maxPrice !== null) {
+        cards = cards.filter(card => {
+            const price = card.pricing?.cardmarket?.avg30 || 
+                         card.pricing?.cardmarket?.trend || 
+                         card.pricing?.tcgplayer?.holofoil;
+            
+            if (!price) return false;
+            
+            if (minPrice !== null && price < minPrice) return false;
+            if (maxPrice !== null && price > maxPrice) return false;
+            
+            return true;
+        });
+    }
+    
+    return cards;
+}
+
+/**
+ * Get card by localId using fetch
+ */
+export async function getCardByLocalId(localId) {
+    try {
+        const tcgdex = new TCGdex('en');
+        const query = Query.create()
+            .equal('localId', localId)
+            .paginate(1, 1);
+        
+        const cards = await tcgdex.fetch('cards', { query });
+        
+        if (!cards || cards.length === 0) {
+            return null;
+        }
+        
+        // Get full details using the SDK ID
+        const card = await getCardDetails(cards[0].id);
+        return card;
+    } catch (error) {
+        console.error('Error fetching card by localId:', error);
+        return null;
+    }
+}
+
+/**
+ * Get card by set ID and localId
+ */
+export async function getCardBySetAndLocalId(setId, localId) {
+    try {
+        const tcgdex = new TCGdex('en');
+        const query = Query.create()
+            .equal('set.id', setId)
+            .equal('localId', localId)
+            .paginate(1, 1);
+        
+        const cards = await tcgdex.fetch('cards', { query });
+        
+        if (!cards || cards.length === 0) {
+            return null;
+        }
+        
+        const card = await getCardDetails(cards[0].id);
+        return card;
+    } catch (error) {
+        console.error('Error fetching card by set and localId:', error);
+        return null;
+    }
+}
+
+/**
+ * Search by localId only (across all sets)
+ * This will find the card regardless of which set it's from
+ */
+export async function searchByLocalId(localId, page = 1, pageSize = 20) {
+    return searchCards({ localId }, { page, pageSize });
+}
+
+
+
+// Legacy support functions
 export async function searchCardsPaginated(query, page = 1, pageSize = 20) {
     return searchCards(query, { page, pageSize });
 }
@@ -166,7 +368,7 @@ export async function searchCardsByName(name, options = {}) {
 }
 
 export async function searchCardsByType(type, options = {}) {
-    return searchCards({ type }, options);
+    return searchCards({ types: [type] }, options);
 }
 
 export async function searchCardsBySet(setName, options = {}) {
@@ -181,3 +383,5 @@ export async function getSearchCount(params) {
     const cards = await searchCards(params);
     return cards.length;
 }
+
+export { QuerySanitizer };

@@ -5,7 +5,7 @@
   "description": "Backend microservices for Next.js frontend (Express + CORS).",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
+    "start": "nodemon server.js",
     "dev": "nodemon server.js",
     "lint": "eslint . --ext .js",
     "format": "prettier --write .",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.87.1",
+    "@tcgdex/sdk": "^2.8.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
@@ -21,11 +22,12 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
+    "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "eslint": "^9.10.0",
-    "nodemon": "^3.1.11",
+    "nodemon": "^3.1.14",
     "prettier": "^3.3.0"
   }
 }

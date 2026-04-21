@@ -1,16 +1,18 @@
-export const POKEMON_TCG_API_BASE_URL = process.env.Pokemon_URL
-
 export const HEADERS = {
-    "Content-Type": "application/json",
-    "X-Api-Key": process.env.PokemonShow
+    "Content-Type": "application/json"
 };
 
-//debug loggers
-if (!POKEMON_TCG_API_BASE_URL) {
-    console.error('ERROR: Pokemon_URL is not set in .env file');
-    process.exit(1);
-}
+// Rate limiting configuration
+export const RATE_LIMIT_CONFIG = {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100 // limit each IP to 100 requests per windowMs
+};
 
-if (!HEADERS['X-Api-Key']) {
-    console.error('❌ ERROR: PokemonShow API key is not set in .env file');
-}
+// Cache configuration
+export const CACHE_CONFIG = {
+    stdTTL: 300, // Default 5 minutes
+    checkperiod: 60,
+    maxKeys: 500
+};
+
+console.log('✅ TCGdex SDK initialized');

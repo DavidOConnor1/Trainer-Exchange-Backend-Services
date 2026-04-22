@@ -5,6 +5,7 @@ import setRoutes from './setRoutes.js';
 import healthRoutes from './healthRoutes.js';
 import adminRoutes from './adminRoutes.js';
 import batchRoutes from './batchRoutes.js';  
+import monitoringRoutes from './monitoringRoutes.js';
 
 const router = express.Router();
 
@@ -14,5 +15,6 @@ router.use('/sets', setRoutes);
 router.use('/health', healthRoutes);
 router.use('/admin', adminRoutes);
 router.use('/batch', batchRoutes);  
+router.use('/monitoring', monitoringRoutes);
 
 export default router;

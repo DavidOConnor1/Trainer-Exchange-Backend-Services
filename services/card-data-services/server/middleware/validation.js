@@ -47,3 +47,19 @@ export const validateSearchQuery = (req, res, next) => {
     }
     next();
 };
+
+// Prevent parameter pollution attacks
+export const preventParameterPollution = (req, res, next) => {
+    // Check for duplicate query parameters
+    const queryKeys = Object.keys(req.query);
+    const uniqueKeys = new Set(queryKeys);
+    
+    if (queryKeys.length !== uniqueKeys.size) {
+        return res.status(400).json({
+            success: false,
+            error: 'Duplicate query parameters are not allowed'
+        });
+    }
+    
+    next();
+};

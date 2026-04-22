@@ -3,11 +3,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { randomBytes } from 'crypto';
 import TCGdex, { Query } from '@tcgdex/sdk';
 
 import apiRoutes from './routes/index.js';
-import { ResponseHandler } from './utils/responseHandler.js';
-import { ErrorHandler, asyncHandler } from './utils/errorHandler.js';
 import { pokemonAPI, apiObserver } from '../api/APIClient.js';
 import { LoggingObserver, ErrorTrackingObserver } from '../api/APIClient.js';
 
@@ -17,66 +16,183 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 let serverStartTime = Date.now();
 
-// Simple request logging middleware
+// ============================================
+// SECURITY MIDDLEWARE
+// ============================================
+
+// Add unique request ID for tracing
 app.use((req, res, next) => {
-    console.log('\n=== INCOMING REQUEST ===');
-    console.log('Method:', req.method);
-    console.log('URL:', req.url);
-    console.log('Query:', req.query);
-    console.log('Params:', req.params);
-    if (req.method === 'POST' || req.method === 'PUT') {
-        console.log('Body:', req.body);
+    req.id = randomBytes(16).toString('hex');
+    res.setHeader('X-Request-ID', req.id);
+    next();
+});
+
+// Security headers middleware
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+});
+
+// Helmet for additional security headers
+app.use(helmet({
+    contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "https://assets.tcgdex.net"],
+        },
+    } : false,
+    hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+    },
+    frameguard: { action: 'deny' },
+    noSniff: true,
+    xssFilter: true
+}));
+
+// CORS configuration
+const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? [process.env.CORS_ORIGIN].filter(Boolean)
+    : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000'];
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID'],
+    maxAge: 86400
+}));
+
+// Request limits
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Request timeout
+app.use((req, res, next) => {
+    req.setTimeout(10000);
+    res.setTimeout(10000);
+    next();
+});
+
+// Trust proxy for production
+if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+}
+
+// ============================================
+// RATE LIMITING
+// ============================================
+
+const globalLimiter = rateLimit({
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+    max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: false,
+    message: { 
+        success: false, 
+        error: 'Too many requests, please try again later.',
+        retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000) / 1000)
     }
-    console.log('=== END REQUEST ===');
+});
+
+const searchLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: 'Too many search requests, please slow down.' }
+});
+
+app.use('/api/', globalLimiter);
+app.use('/api/search', searchLimiter);
+
+// ============================================
+// REQUEST LOGGING
+// ============================================
+
+app.use((req, res, next) => {
+    console.log(`\n[${req.id}] === INCOMING REQUEST ===`);
+    console.log(`[${req.id}] Method: ${req.method}`);
+    console.log(`[${req.id}] URL: ${req.url}`);
+    console.log(`[${req.id}] Query:`, req.query);
+    console.log(`[${req.id}] Params:`, req.params);
+    if (req.method === 'POST' || req.method === 'PUT') {
+        console.log(`[${req.id}] Body:`, req.body);
+    }
+    console.log(`[${req.id}] === END REQUEST ===`);
     
     const startTime = Date.now();
     
     res.on('finish', () => {
         const duration = Date.now() - startTime;
         const statusIcon = res.statusCode >= 200 && res.statusCode < 400 ? '✅' : '❌';
-        console.log(`[${new Date().toISOString()}] ${statusIcon} ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+        console.log(`[${req.id}] ${statusIcon} ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
     });
     
     next();
 });
 
-// Security middleware
-app.use(cors({
-    origin: process.env.NODE_ENV === 'development'
-        ? process.env.CORS_ORIGIN || 'http://localhost:3000'
-        : ['http://localhost:3000', 'http://127.0.0.1:3000', process.env.FRONTEND_URL],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// ============================================
+// OBSERVER SETUP
+// ============================================
 
-app.use(express.json());
-app.use(helmet({ contentSecurityPolicy: false }));
-
-// Rate limiting
-const globalLimiter = rateLimit({
-    windowMs: process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000,
-    max: process.env.RATE_LIMIT_MAX_REQUESTS || 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, error: 'Too many requests, please try again later.' }
-});
-app.use('/api/', globalLimiter);
-
-// Setup observers
 const loggingObserver = new LoggingObserver();
 const errorTracker = new ErrorTrackingObserver();
 apiObserver.subscribe(loggingObserver);
 apiObserver.subscribe(errorTracker);
 
-/// Test function to verify TCGdex SDK connection
+// ============================================
+// ENVIRONMENT VALIDATION
+// ============================================
+
+function validateEnvironment() {
+    const required = ['PORT'];
+    const missing = required.filter(key => !process.env[key]);
+    
+    if (missing.length > 0) {
+        console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+        if (process.env.NODE_ENV === 'production') {
+            process.exit(1);
+        }
+    }
+    
+    console.log('✅ Environment variables validated');
+    
+    if (process.env.NODE_ENV === 'production') {
+        console.log('🔒 Running in production mode');
+    } else {
+        console.log('⚠️  Running in development mode');
+    }
+}
+
+validateEnvironment();
+
+// ============================================
+// TCGdex CONNECTION TEST
+// ============================================
+
 async function testTCGdexConnection() {
     console.log('\n🔌 Testing TCGdex SDK Connection...');
     try {
         const tcgdex = new TCGdex('en');
         
-        // Test: Fetch a known card 
-        console.log('  📡 Fetching test card:');
+        console.log('  📡 Fetching test card');
         const testCard = await tcgdex.fetch('sets', 'swsh3', '11');
         
         if (testCard && testCard.id) {
@@ -84,11 +200,8 @@ async function testTCGdexConnection() {
             console.log(`  📇 Test card found: ${testCard.name} (localId: ${testCard.localId})`);
             console.log(`  🃏 Card set: ${testCard.set?.name}`);
             
-            // Check if Cardmarket pricing is available
             if (testCard.pricing?.cardmarket) {
                 console.log(`  💰 Cardmarket pricing: AVAILABLE`);
-                
-                // Access pricing directly as per documentation - only avg30 and trend
                 const avg30 = testCard.pricing.cardmarket.avg30;
                 const trend = testCard.pricing.cardmarket.trend;
                 
@@ -118,278 +231,159 @@ async function testTCGdexConnection() {
     }
 }
 
-// Test endpoint to fetch 5 UNIQUE random cards
-app.get('/api/test/random', asyncHandler(async (req, res) => {
-    const tcgdex = new TCGdex('en');
-    
-    console.log('\n🎲 Fetching 5 UNIQUE random cards for testing...');
-    
-    const randomCards = [];
-    const usedIds = new Set();
-    let attempts = 0;
-    const maxAttempts = 20;
-    
-    while (randomCards.length < 5 && attempts < maxAttempts) {
-        attempts++;
-        console.log(`  Fetching random card ${randomCards.length + 1}/5 (attempt ${attempts})...`);
-        
-        const randomCard = await tcgdex.random.card();
-        
-        if (randomCard && randomCard.id && !usedIds.has(randomCard.id)) {
-            usedIds.add(randomCard.id);
-            
-            
-            randomCards.push({
-                name: randomCard.name,
-                localId: randomCard.localId,
-                set: randomCard.set?.name,
-                rarity: randomCard.rarity,
-                trendPrice: trendPrice ? `€${trendPrice}` : 'N/A',
-                avg30Price: avg30Price ? `€${avg30Price}` : 'N/A',
-                hasPricing: !!randomCard.pricing?.cardmarket
-            });
-            
-            console.log(`    ✅ Got: ${randomCard.name} (${randomCard.localId}) - Trend: ${trendPrice ? `€${trendPrice}` : 'N/A'}`);
-        } else if (randomCard && usedIds.has(randomCard.id)) {
-            console.log(`    ⚠️ Duplicate card: ${randomCard.name} (${randomCard.localId}), fetching another...`);
-        } else {
-            console.log(`    ❌ Failed to fetch random card, retrying...`);
-        }
-    }
-    
-    console.log(`\n✅ Successfully fetched ${randomCards.length}/5 unique random cards`);
-    
-    res.json({
-        success: true,
-        message: `Successfully fetched ${randomCards.length} unique random cards`,
-        count: randomCards.length,
-        cards: randomCards
-    });
-}));
+// ============================================
+// TEST ENDPOINTS
+// ============================================
 
-// Helper function to parse card ID
-function parseCardId(cardId) {
-    // Check if the ID contains a dash (e.g., "smp-SM109")
-    if (cardId.includes('-')) {
-        const parts = cardId.split('-');
-        // First part is set ID, remaining parts joined with dash is localId
-        const setId = parts[0];
-        const localId = parts.slice(1).join('-');
-        return { type: 'full', setId, localId, fullId: cardId };
-    }
-    // Otherwise treat as SDK ID
-    return { type: 'sdk', fullId: cardId };
-}
-
-// Debug endpoint to see raw card structure (handles both formats)
-app.get('/api/debug/raw-card/:cardId', asyncHandler(async (req, res) => {
-    const { cardId } = req.params;
-    const tcgdex = new TCGdex('en');
-    
+app.get('/api/test/random', async (req, res) => {
     try {
-        const parsed = parseCardId(cardId);
-        let card;
-        let fetchMethod = '';
+        const tcgdex = new TCGdex('en');
         
-        if (parsed.type === 'full') {
-            // Method 1: Use set.get() then find card by localId
-            console.log(`\n🔍 Parsed ID - Set: ${parsed.setId}, LocalId: ${parsed.localId}`);
+        console.log(`\n[${req.id}] 🎲 Fetching 5 UNIQUE random cards for testing...`);
+        
+        const randomCards = [];
+        const usedIds = new Set();
+        let attempts = 0;
+        const maxAttempts = 20;
+        
+        while (randomCards.length < 5 && attempts < maxAttempts) {
+            attempts++;
+            console.log(`[${req.id}]   Fetching random card ${randomCards.length + 1}/5 (attempt ${attempts})...`);
             
-            try {
-                // Get the set first
-                const set = await tcgdex.set.get(parsed.setId);
-                console.log(`  📦 Found set: ${set.name}`);
+            const randomCard = await tcgdex.random.card();
+            
+            if (randomCard && randomCard.id && !usedIds.has(randomCard.id)) {
+                usedIds.add(randomCard.id);
                 
-                // Find the card in the set's cards array
-                const cardResume = set.cards?.find(c => c.localId === parsed.localId);
+                const trendPrice = randomCard.pricing?.cardmarket?.trend;
+                const avg30Price = randomCard.pricing?.cardmarket?.avg30;
                 
-                if (cardResume) {
-                    // Get full card details using the relationship
-                    card = await cardResume.getCard();
-                    fetchMethod = `set.get('${parsed.setId}') → find card → getCard()`;
-                    console.log(`  ✅ Retrieved card via set relationship`);
-                } else {
-                    throw new Error(`Card with localId ${parsed.localId} not found in set ${parsed.setId}`);
-                }
-            } catch (setError) {
-                console.log(`  ⚠️ Set method failed: ${setError.message}`);
+                randomCards.push({
+                    name: randomCard.name,
+                    localId: randomCard.localId,
+                    set: randomCard.set?.name,
+                    rarity: randomCard.rarity,
+                    trendPrice: trendPrice ? `€${trendPrice}` : 'N/A',
+                    avg30Price: avg30Price ? `€${avg30Price}` : 'N/A',
+                    hasPricing: !!randomCard.pricing?.cardmarket
+                });
                 
-                // Method 2: Try direct card.get with full ID
-                try {
-                    card = await tcgdex.card.get(cardId);
-                    fetchMethod = `card.get('${cardId}')`;
-                    console.log(`  ✅ Retrieved card via direct card.get()`);
-                } catch (cardError) {
-                    // Method 3: Try searching by localId
-                    const { Query } = await import('@tcgdex/sdk');
-                    const query = Query.create()
-                        .equal('set.id', parsed.setId)
-                        .equal('localId', parsed.localId)
-                        .paginate(1, 1);
-                    
-                    const cards = await tcgdex.fetch('cards', { query });
-                    if (cards && cards.length > 0) {
-                        card = cards[0];
-                        fetchMethod = `fetch('cards', query)`;
-                        console.log(`  ✅ Retrieved card via query search`);
-                    } else {
-                        throw new Error(`Card not found with any method`);
-                    }
-                }
+                console.log(`[${req.id}]     ✅ Got: ${randomCard.name} (${randomCard.localId}) - Trend: ${trendPrice ? `€${trendPrice}` : 'N/A'}`);
+            } else if (randomCard && usedIds.has(randomCard.id)) {
+                console.log(`[${req.id}]     ⚠️ Duplicate card: ${randomCard.name} (${randomCard.localId}), fetching another...`);
             }
-        } else {
-            // Direct SDK ID lookup
-            card = await tcgdex.card.get(parsed.fullId);
-            fetchMethod = `card.get('${parsed.fullId}')`;
-            console.log(`  ✅ Retrieved card via direct SDK ID`);
         }
         
-        // Log the structure to console
-        console.log('\n=== RAW CARD STRUCTURE ===');
-        console.log('Fetch Method:', fetchMethod);
-        console.log('Card ID:', card.id);
-        console.log('Card Name:', card.name);
-        console.log('Local ID:', card.localId);
-        console.log('Set object:', card.set ? {
-            id: card.set.id,
-            name: card.set.name,
-            hasSerie: !!card.set.serie,
-            serieName: card.set.serie?.name
-        } : 'No set');
-        console.log('Pricing object:', card.pricing ? {
-            hasCardmarket: !!card.pricing.cardmarket,
-            cardmarketKeys: card.pricing.cardmarket ? Object.keys(card.pricing.cardmarket) : []
-        } : 'No pricing');
+        console.log(`[${req.id}] ✅ Successfully fetched ${randomCards.length}/5 unique random cards`);
         
-        if (card.pricing?.cardmarket) {
-            console.log('  - avg30:', card.pricing.cardmarket.avg30);
-            console.log('  - trend:', card.pricing.cardmarket.trend);
-            console.log('  - avg:', card.pricing.cardmarket.avg);
-            console.log('  - low:', card.pricing.cardmarket.low);
-        }
-        
-        console.log('Images:', card.images ? Object.keys(card.images) : 'No images object');
-        console.log('Has getImageURL:', typeof card.getImageURL === 'function');
-        console.log('========================\n');
-        
-        // Return detailed info
         res.json({
             success: true,
-            fetchMethod,
-            parsed: parsed.type === 'full' ? {
-                type: 'full',
-                setId: parsed.setId,
-                localId: parsed.localId
-            } : {
-                type: 'sdk',
-                fullId: parsed.fullId
-            },
-            card: {
-                id: card.id,
-                localId: card.localId,
-                name: card.name,
-                hasSet: !!card.set,
-                setInfo: card.set ? {
-                    id: card.set.id,
-                    name: card.set.name,
-                    series: card.set.serie?.name
-                } : null,
-                hasPricing: !!card.pricing?.cardmarket,
-                pricing: card.pricing?.cardmarket ? {
-                    avg30: card.pricing.cardmarket.avg30,
-                    trend: card.pricing.cardmarket.trend,
-                    avg: card.pricing.cardmarket.avg,
-                    low: card.pricing.cardmarket.low
-                } : null,
-                hasImages: !!card.images,
-                imageCount: card.images ? Object.keys(card.images).length : 0
-            }
+            message: `Successfully fetched ${randomCards.length} unique random cards`,
+            count: randomCards.length,
+            cards: randomCards
         });
     } catch (error) {
-        console.error('Debug endpoint error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            cardId: cardId,
-            parsed: parseCardId(cardId)
-        });
+        console.error(`[${req.id}] Random card fetch error:`, error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
-}));
+});
 
-// Debug endpoint to see raw card structure
-app.get('/api/debug/raw-card/:cardId', asyncHandler(async (req, res) => {
-    const { cardId } = req.params;
-    const tcgdex = new TCGdex('en');
-    
+app.get('/api/test/random/:count', async (req, res) => {
     try {
-        const card = await tcgdex.card.get(cardId);
+        const tcgdex = new TCGdex('en');
+        let count = parseInt(req.params.count);
         
-        // Log the structure to console
-        console.log('\n=== RAW CARD STRUCTURE ===');
-        console.log('Card ID:', card.id);
-        console.log('Card Name:', card.name);
-        console.log('Set object:', card.set ? {
-            id: card.set.id,
-            name: card.set.name,
-            hasSerie: !!card.set.serie,
-            serieName: card.set.serie?.name
-        } : 'No set');
-        console.log('Pricing object:', card.pricing ? {
-            hasCardmarket: !!card.pricing.cardmarket,
-            cardmarketKeys: card.pricing.cardmarket ? Object.keys(card.pricing.cardmarket) : []
-        } : 'No pricing');
-        console.log('Images:', card.images ? Object.keys(card.images) : 'No images object');
-        console.log('Has getImageURL:', typeof card.getImageURL === 'function');
-        console.log('========================\n');
+        if (isNaN(count) || count < 1) count = 1;
+        if (count > 20) count = 20;
         
-         
-
-        // Return minimal info
+        console.log(`\n[${req.id}] 🎲 Fetching ${count} UNIQUE random cards for testing...`);
+        
+        const randomCards = [];
+        const usedIds = new Set();
+        let attempts = 0;
+        const maxAttempts = count * 4;
+        
+        while (randomCards.length < count && attempts < maxAttempts) {
+            attempts++;
+            console.log(`[${req.id}]   Fetching random card ${randomCards.length + 1}/${count} (attempt ${attempts})...`);
+            
+            const randomCard = await tcgdex.random.card();
+            
+            if (randomCard && randomCard.id && !usedIds.has(randomCard.id)) {
+                usedIds.add(randomCard.id);
+                
+                const trendPrice = randomCard.pricing?.cardmarket?.trend;
+                const avg30Price = randomCard.pricing?.cardmarket?.avg30;
+                
+                randomCards.push({
+                    name: randomCard.name,
+                    localId: randomCard.localId,
+                    setId: randomCard.set?.id,
+                    set: randomCard.set?.name,
+                    types: randomCard.types || [],
+                    hp: randomCard.hp,
+                    rarity: randomCard.rarity,
+                    trendPrice: trendPrice ? `€${trendPrice}` : 'N/A',
+                    avg30Price: avg30Price ? `€${avg30Price}` : 'N/A',
+                    hasPricing: !!randomCard.pricing?.cardmarket
+                });
+                
+                console.log(`[${req.id}]     ✅ Got: ${randomCard.name} (${randomCard.localId}) - ${randomCard.set?.name} - Trend: ${trendPrice ? `€${trendPrice}` : 'N/A'}`);
+            } else if (randomCard && usedIds.has(randomCard.id)) {
+                console.log(`[${req.id}]     ⚠️ Duplicate card: ${randomCard.name} (${randomCard.localId}), fetching another...`);
+            }
+        }
+        
+        console.log(`[${req.id}] ✅ Successfully fetched ${randomCards.length}/${count} unique random cards`);
+        
         res.json({
-            id: card.id,
-            name: card.name,
-            hasSet: !!card.set,
-            setInfo: card.set ? {
-                id: card.set.id,
-                name: card.set.name
-            } : null,
-            hasPricing: !!card.pricing?.cardmarket,
-            pricingSample: card.pricing.cardmarket ? {
-                avg30: card.pricing.cardmarket.avg30,
-                trend: card.pricing.cardmarket.trend
-            } : null
+            success: true,
+            message: `Successfully fetched ${randomCards.length} unique random cards`,
+            requestedCount: count,
+            count: randomCards.length,
+            cards: randomCards
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error(`[${req.id}] Random card fetch error:`, error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
-}));
+});
 
-// Original search endpoint
-app.get('/api/test/search', asyncHandler(async (req, res) => {
-    const tcgdex = new TCGdex('en');
-    const query = Query.create()
-        .contains('name', 'Pikachu')
-        .paginate(1, 5);
-    
-    const cards = await tcgdex.fetch('cards', { query });
-    
-    res.json({
-        success: true,
-        message: 'Test search successful',
-        count: cards.length,
-        cards: cards.map(c => ({ 
-            id: c.id, 
-            name: c.name, 
-            localId: c.localId,
-            set: c.set?.name
-        }))
-    });
-}));
+app.get('/api/test/search', async (req, res) => {
+    try {
+        const tcgdex = new TCGdex('en');
+        const query = Query.create()
+            .contains('name', 'Pikachu')
+            .paginate(1, 5);
+        
+        const cards = await tcgdex.fetch('cards', { query });
+        
+        res.json({
+            success: true,
+            message: 'Test search successful',
+            count: cards.length,
+            cards: cards.map(c => ({ 
+                id: c.id, 
+                name: c.name, 
+                localId: c.localId,
+                set: c.set?.name
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
-// API Routes
+// ============================================
+// MAIN API ROUTES
+// ============================================
+
 app.use('/api', apiRoutes);
 
-// Health check endpoint
+// ============================================
+// HEALTH AND STATUS ENDPOINTS
+// ============================================
+
 app.get('/health', (req, res) => {
     const uptime = process.uptime();
     const hours = Math.floor(uptime / 3600);
@@ -402,11 +396,11 @@ app.get('/health', (req, res) => {
         service: 'Pokemon TCG API Gateway (TCGdex)',
         version: '2.0.0',
         uptime: `${hours}h ${minutes}m ${seconds}s`,
-        startTime: new Date(serverStartTime).toISOString()
+        startTime: new Date(serverStartTime).toISOString(),
+        requestId: req.id
     });
 });
 
-// Status endpoint
 app.get('/api/status', (req, res) => {
     const apiCallLog = pokemonAPI.getAPICallLog();
     const errors = errorTracker.getErrors();
@@ -422,26 +416,63 @@ app.get('/api/status', (req, res) => {
             failedCalls: apiCallLog.filter(log => log.status === 'error').length,
             recentErrors: errors.slice(-10),
             lastApiCall: apiCallLog[apiCallLog.length - 1],
-            cacheSize: cacheStats.size
-        }
+            cacheSize: cacheStats.size,
+            environment: process.env.NODE_ENV || 'development'
+        },
+        requestId: req.id
     });
 });
 
-// Handle favicon request to avoid 404 logs
-app.get('/favicon.ico', (req, res) => {
-    res.status(204).end(); // No content
-});
+// ============================================
+// MONITORING ROUTES - ADD THIS SECTION
+// ============================================
+
+import monitoringRoutes from './routes/monitoringRoutes.js';
+app.use('/api/monitoring', monitoringRoutes);
+
+// ============================================
+// ERROR HANDLING
+// ============================================
 
 // 404 handler
 app.use((req, res) => {
-    console.log(`[${new Date().toISOString()}] ❌ 404 - Route not found: ${req.url}`);
-    ResponseHandler.error(res, `Route not found: ${req.url}`, 404);
+    console.log(`[${req.id}] ❌ 404 - Route not found: ${req.url}`);
+    res.status(404).json({
+        success: false,
+        error: `Route not found: ${req.url}`,
+        requestId: req.id
+    });
 });
 
 // Global error handler
-app.use(ErrorHandler.handle);
+app.use((err, req, res, next) => {
+    console.error(`[${req.id}] ❌ Unhandled Error:`, err.message);
+    
+    if (process.env.NODE_ENV === 'development') {
+        console.error(err.stack);
+    }
+    
+    apiObserver.notify('unhandledError', {
+        error: err.message,
+        stack: err.stack,
+        url: req.url,
+        method: req.method,
+        ip: req.ip,
+        requestId: req.id,
+        timestamp: new Date().toISOString()
+    });
 
-// Start server
+    res.status(500).json({
+        success: false,
+        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+        requestId: req.id
+    });
+});
+
+// ============================================
+// SERVER STARTUP
+// ============================================
+
 const server = app.listen(PORT, async () => {
     const loadTime = Date.now() - serverStartTime;
     
@@ -455,13 +486,22 @@ const server = app.listen(PORT, async () => {
 ║  URL:               http://localhost:${PORT}${' '.repeat(38 - String(PORT).length - 19)}║
 ║  Load Time:         ${loadTime}ms${' '.repeat(38 - String(loadTime).length)}║
 ╠════════════════════════════════════════════════════════════════╣
+║  🔒 Security Features:                                         ║
+║  • Request ID Tracing     • Rate Limiting                      ║
+║  • CORS Restrictions      • Request Timeout (10s)              ║
+║  • Helmet Headers         • Size Limits (1mb)                  ║
+║  • Security Headers       • Trust Proxy (prod)                 ║
+╠════════════════════════════════════════════════════════════════╣
 ║  📚 Available Endpoints:                                       ║
 ║  • GET  /health                    - Health check              ║
 ║  • GET  /api/status                - API status                ║
+║  • GET  /api/monitoring/health     - System health             ║
+║  • GET  /api/monitoring/metrics    - API metrics               ║
+║  • GET  /api/monitoring/security   - Security status           ║
+║  • GET  /api/monitoring/dashboard  - Monitoring dashboard      ║
 ║  • GET  /api/cards/:localId        - Get card by localId       ║
 ║  • GET  /api/cards/:setId/:localId - Get card by set+localId   ║
 ║  • POST /api/batch/cards           - Batch get cards           ║
-║  • POST /api/batch/cards/by-localid - Batch by localId         ║
 ║  • GET  /api/search                - Search cards              ║
 ║  • GET  /api/sets                  - Get all sets              ║
 ║  • GET  /api/sets/:setId/cards     - Get cards by set          ║
@@ -469,7 +509,6 @@ const server = app.listen(PORT, async () => {
 ╚════════════════════════════════════════════════════════════════╝
     `);
     
-    // Test TCGdex connection
     const isConnected = await testTCGdexConnection();
     
     if (isConnected) {

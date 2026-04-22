@@ -9,3 +9,6 @@ node_modules
 
 # Sometimes IDE creates env files
 env/
+
+keys
+keys/private.pem

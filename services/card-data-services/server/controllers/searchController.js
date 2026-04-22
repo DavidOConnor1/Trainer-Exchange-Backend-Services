@@ -1,5 +1,6 @@
 import { pokemonAPI } from '../../api/APIClient.js';
 import { ResponseHandler } from '../utils/responseHandler.js';
+import { asyncHandler } from '../utils/errorHandler.js';
 
 // Helper function to clean card data (remove circular references)
 function cleanCardData(card) {
@@ -17,7 +18,7 @@ function cleanCardData(card) {
         };
     }
     
-    // Extract pricing information - DIRECT access (not nested in cardmarket)
+    // Extract pricing information 
     let pricingInfo = null;
     if (card.pricing && (card.pricing.avg30 || card.pricing.trend || card.pricing.avg)) {
         pricingInfo = {
@@ -91,7 +92,7 @@ function cleanCardData(card) {
 }
 
 export const searchController = {
-    async searchCards(req, res) {
+    searchCards: asyncHandler(async (req, res) => {
         const startTime = Date.now();
         try {
             const {
@@ -154,9 +155,9 @@ export const searchController = {
             console.error(`❌ Search failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async searchByAbility(req, res) {
+     searchByAbility: asyncHandler(async (req, res) => {
         const startTime = Date.now();
         try {
             const { text, page = 1, pageSize = 20 } = req.query;
@@ -187,9 +188,9 @@ export const searchController = {
             console.error(`❌ Ability search failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async searchByAttack(req, res) {
+    searchByAttack: asyncHandler(async (req, res) => {
         const startTime = Date.now();
         try {
             const { name, page = 1, pageSize = 20 } = req.query;
@@ -220,5 +221,5 @@ export const searchController = {
             console.error(`❌ Attack search failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    }
+    })
 };

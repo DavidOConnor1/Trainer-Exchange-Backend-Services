@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Status and metrics
 router.get('/status', adminLimiter, adminController.getStatus);
-router.get('/metrics', adminLimiter, adminController.getStatus); // Alias
+router.get('/metrics', adminLimiter, adminController.getStatus); 
 router.get('/errors', adminLimiter, adminController.getErrors);
 
 // Call logs

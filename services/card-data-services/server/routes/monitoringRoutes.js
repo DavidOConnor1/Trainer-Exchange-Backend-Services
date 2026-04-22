@@ -1,7 +1,6 @@
 import express from 'express';
 import os from 'os';
 import { pokemonAPI } from '../../api/APIClient.js';
-import { ResponseHandler } from '../utils/responseHandler.js';
 import { getRequestMetrics, resetMetrics } from '../middleware/logging.js';
 
 const router = express.Router();
@@ -67,7 +66,6 @@ router.get('/metrics', (req, res) => {
     const recentCalls = apiCallLog.slice(-100);
     const avgResponseTime = recentCalls.length > 0
         ? (recentCalls.reduce((sum, log) => {
-            // You'd need to store response times in your logs
             return sum;
         }, 0) / recentCalls.length).toFixed(2)
         : 0;
@@ -119,7 +117,6 @@ router.get('/metrics', (req, res) => {
 // PATTERN STATUS MONITORING
 // ============================================
 
-// Get pattern statistics (Circuit Breaker, Bulkhead, etc.)
 router.get('/patterns', (req, res) => {
     const patternStats = {
         circuitBreaker: pokemonAPI.circuitBreaker ? {
@@ -157,31 +154,25 @@ router.get('/patterns', (req, res) => {
 // SECURITY MONITORING
 // ============================================
 
-// Security metrics and alerts
 router.get('/security', (req, res) => {
     const apiCallLog = pokemonAPI.getAPICallLog();
     
-    // Detect potential abuse patterns
     const ipRequests = new Map();
     const endpointHits = new Map();
     const failedAuthAttempts = [];
     
     apiCallLog.forEach(log => {
-        // Track IP requests (if you store IP)
         if (log.params?.ip) {
             ipRequests.set(log.params.ip, (ipRequests.get(log.params.ip) || 0) + 1);
         }
         
-        // Track endpoint popularity
         endpointHits.set(log.endpoint, (endpointHits.get(log.endpoint) || 0) + 1);
         
-        // Track failed auth attempts
         if (log.status === 'error' && log.error?.includes('Unauthorized')) {
             failedAuthAttempts.push(log);
         }
     });
     
-    // Find potential abuse (IPs with >100 requests)
     const potentialAbuse = Array.from(ipRequests.entries())
         .filter(([, count]) => count > 100)
         .map(([ip, count]) => ({ ip, requestCount: count }));
@@ -222,18 +213,16 @@ router.get('/security', (req, res) => {
 });
 
 // ============================================
-// DATABASE/CACHE MONITORING
+// CACHE MONITORING
 // ============================================
 
-// Cache performance metrics
 router.get('/cache', (req, res) => {
     const cacheStats = pokemonAPI.getCacheStats();
     const apiCallLog = pokemonAPI.getAPICallLog();
     
-    // Calculate cache effectiveness
     const cacheableEndpoints = ['searchCards', 'getCardById', 'getAllSets'];
     const cacheableCalls = apiCallLog.filter(log => cacheableEndpoints.includes(log.endpoint));
-    const estimatedCacheHits = cacheableCalls.length * 0.7; // Estimate based on pattern
+    const estimatedCacheHits = cacheableCalls.length * 0.7;
     
     res.json({
         success: true,
@@ -265,12 +254,10 @@ router.get('/cache', (req, res) => {
 // PERFORMANCE PROFILING
 // ============================================
 
-// Performance profiling endpoint
 router.get('/performance', (req, res) => {
     const apiCallLog = pokemonAPI.getAPICallLog();
     const recentCalls = apiCallLog.slice(-200);
     
-    // Group by hour
     const hourlyStats = new Map();
     recentCalls.forEach(log => {
         const hour = new Date(log.timestamp).getHours();
@@ -286,7 +273,6 @@ router.get('/performance', (req, res) => {
         }
     });
     
-    // Find peak hours
     const peakHour = Array.from(hourlyStats.entries())
         .sort((a, b) => b[1].total - a[1].total)[0];
     
@@ -307,7 +293,7 @@ router.get('/performance', (req, res) => {
             hourlyDistribution: Array.from(hourlyStats.entries())
                 .map(([hour, stats]) => ({ hour, ...stats }))
                 .sort((a, b) => a.hour - b.hour),
-            slowEndpoints: [] // Would need to track response times
+            slowEndpoints: []
         },
         timestamp: new Date().toISOString(),
         requestId: req.id
@@ -318,15 +304,10 @@ router.get('/performance', (req, res) => {
 // ADMIN ACTIONS
 // ============================================
 
-// Reset monitoring metrics (admin only)
 router.post('/reset', (req, res) => {
-    // Clear API call logs
     pokemonAPI.clearCallLog();
-    
-    // Reset request metrics
     resetMetrics();
     
-    // Reset pattern states if needed
     if (pokemonAPI.circuitBreaker) {
         pokemonAPI.circuitBreaker.reset();
     }
@@ -339,7 +320,6 @@ router.post('/reset', (req, res) => {
     });
 });
 
-// Clear cache (admin only)
 router.post('/clear-cache', (req, res) => {
     const clearedSize = pokemonAPI.clearCache();
     
@@ -356,7 +336,6 @@ router.post('/clear-cache', (req, res) => {
 // ALERTS AND NOTIFICATIONS
 // ============================================
 
-// Get active alerts
 router.get('/alerts', (req, res) => {
     const apiCallLog = pokemonAPI.getAPICallLog();
     const recentErrors = apiCallLog.filter(log => log.status === 'error').slice(-50);
@@ -366,7 +345,6 @@ router.get('/alerts', (req, res) => {
     
     const alerts = [];
     
-    // High error rate alert
     if (errorRate > 10) {
         alerts.push({
             severity: 'HIGH',
@@ -376,7 +354,6 @@ router.get('/alerts', (req, res) => {
         });
     }
     
-    // Circuit breaker open alert
     if (pokemonAPI.circuitBreaker && pokemonAPI.circuitBreaker.getState() === 'OPEN') {
         alerts.push({
             severity: 'CRITICAL',
@@ -386,7 +363,6 @@ router.get('/alerts', (req, res) => {
         });
     }
     
-    // Cache health alert
     const cacheStats = pokemonAPI.getCacheStats();
     if (cacheStats.size === 0 && apiCallLog.length > 100) {
         alerts.push({
@@ -411,6 +387,128 @@ router.get('/alerts', (req, res) => {
         timestamp: new Date().toISOString(),
         requestId: req.id
     });
+});
+
+// ============================================
+// DASHBOARD - HTML VIEW
+// ============================================
+
+router.get('/dashboard', (req, res) => {
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Pokemon TCG API - Monitoring Dashboard</title>
+    <style>
+        body { font-family: monospace; margin: 20px; background: #1e1e1e; color: #d4d4d4; }
+        h1 { color: #4ec9b0; }
+        .card { background: #2d2d2d; border-radius: 8px; padding: 15px; margin: 10px 0; }
+        .metric { display: inline-block; margin: 10px; padding: 10px; background: #3c3c3c; border-radius: 4px; }
+        .value { font-size: 24px; font-weight: bold; color: #4ec9b0; }
+        .label { font-size: 12px; color: #858585; }
+        .error { color: #f48771; }
+        .success { color: #6a9955; }
+        button { background: #0e639c; color: white; border: none; padding: 8px 16px; cursor: pointer; margin: 5px; }
+        button:hover { background: #1177bb; }
+        .refresh { position: fixed; top: 20px; right: 20px; }
+        .metric-container { display: flex; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+    <button class="refresh" onclick="refreshData()">🔄 Refresh</button>
+    <h1>🎴 Pokemon TCG API - Monitoring Dashboard</h1>
+    
+    <div class="card">
+        <h2>📊 System Health</h2>
+        <div id="health" class="metric-container"></div>
+    </div>
+    
+    <div class="card">
+        <h2>📈 API Metrics</h2>
+        <div id="metrics" class="metric-container"></div>
+    </div>
+    
+    <div class="card">
+        <h2>🔒 Security Status</h2>
+        <div id="security" class="metric-container"></div>
+    </div>
+    
+    <div class="card">
+        <h2>💾 Cache Performance</h2>
+        <div id="cache" class="metric-container"></div>
+    </div>
+    
+    <div class="card">
+        <h2>⚠️ Active Alerts</h2>
+        <div id="alerts" class="metric-container"></div>
+    </div>
+    
+    <script>
+        async function refreshData() {
+            try {
+                const healthRes = await fetch('/api/monitoring/health');
+                const health = await healthRes.json();
+                if (health.success) {
+                    document.getElementById('health').innerHTML = \`
+                        <div class="metric"><div class="value">\${health.data.uptime}</div><div class="label">Uptime</div></div>
+                        <div class="metric"><div class="value">\${health.data.process.memoryUsage.heapUsed}</div><div class="label">Heap Used</div></div>
+                        <div class="metric"><div class="value">\${health.data.system.cpus}</div><div class="label">CPU Cores</div></div>
+                        <div class="metric"><div class="value">\${health.data.system.freeMemory}</div><div class="label">Free Memory</div></div>
+                    \`;
+                }
+                
+                const metricsRes = await fetch('/api/monitoring/metrics');
+                const metrics = await metricsRes.json();
+                if (metrics.success) {
+                    document.getElementById('metrics').innerHTML = \`
+                        <div class="metric"><div class="value \${parseFloat(metrics.data.summary.successRate) > 90 ? 'success' : 'error'}">\${metrics.data.summary.successRate}</div><div class="label">Success Rate</div></div>
+                        <div class="metric"><div class="value">\${metrics.data.summary.totalApiCalls}</div><div class="label">Total API Calls</div></div>
+                        <div class="metric"><div class="value">\${metrics.data.cache.hitRate || '0%'}</div><div class="label">Cache Hit Rate</div></div>
+                        <div class="metric"><div class="value">\${Object.keys(metrics.data.endpoints).length}</div><div class="label">Active Endpoints</div></div>
+                    \`;
+                }
+                
+                const securityRes = await fetch('/api/monitoring/security');
+                const security = await securityRes.json();
+                if (security.success) {
+                    document.getElementById('security').innerHTML = \`
+                        <div class="metric"><div class="value">\${security.data.rateLimit.currentActive}</div><div class="label">Rate Limiting</div></div>
+                        <div class="metric"><div class="value">\${security.data.abuseDetection.potentialAbuse}</div><div class="label">Potential Abuse</div></div>
+                        <div class="metric"><div class="value">\${security.data.endpoints.totalUnique}</div><div class="label">Unique Endpoints</div></div>
+                        <div class="metric"><div class="value">\${security.data.securityHeaders.xssProtection}</div><div class="label">XSS Protection</div></div>
+                    \`;
+                }
+                
+                const cacheRes = await fetch('/api/monitoring/cache');
+                const cache = await cacheRes.json();
+                if (cache.success) {
+                    document.getElementById('cache').innerHTML = \`
+                        <div class="metric"><div class="value">\${cache.data.currentCache.size}</div><div class="label">Cache Size</div></div>
+                        <div class="metric"><div class="value">\${cache.data.effectiveness.reductionRatio}</div><div class="label">Reduction Ratio</div></div>
+                        <div class="metric"><div class="value">\${cache.data.memoryUsage.totalHeap}</div><div class="label">Total Heap</div></div>
+                        <div class="metric"><div class="value">\${cache.data.effectiveness.hitRate || '0%'}</div><div class="label">Hit Rate</div></div>
+                    \`;
+                }
+                
+                const alertsRes = await fetch('/api/monitoring/alerts');
+                const alerts = await alertsRes.json();
+                if (alerts.success && alerts.data.alerts.length > 0) {
+                    document.getElementById('alerts').innerHTML = alerts.data.alerts.map(alert => 
+                        \`<div class="metric error"><div class="value">\${alert.severity}</div><div class="label">\${alert.message}</div></div>\`
+                    ).join('');
+                } else if (alerts.success) {
+                    document.getElementById('alerts').innerHTML = '<div class="metric success"><div class="value">✅ No Active Alerts</div></div>';
+                }
+            } catch (error) {
+                console.error('Failed to fetch data:', error);
+                document.getElementById('health').innerHTML = '<div class="metric error"><div class="value">❌ Error loading data</div></div>';
+            }
+        }
+        
+        refreshData();
+        setInterval(refreshData, 30000);
+    </script>
+</body>
+</html>`);
 });
 
 export default router;

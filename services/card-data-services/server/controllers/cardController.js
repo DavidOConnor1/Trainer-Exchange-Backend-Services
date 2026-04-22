@@ -1,4 +1,5 @@
 import { pokemonAPI } from '../../api/APIClient.js';
+import { asyncHandler } from '../utils/errorHandler.js';
 import { ResponseHandler } from '../utils/responseHandler.js';
 
 // Helper function to clean card data
@@ -56,7 +57,7 @@ function cleanCardData(card) {
 }
 
 export const cardController = {
-    async getCardByLocalId(req, res) {
+    getCardByLocalId: asyncHandler(async(req, res) => {
         const startTime = Date.now();
         try {
             const { localId } = req.params;
@@ -80,9 +81,9 @@ export const cardController = {
             console.error(`❌ getCardByLocalId failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async getCardBySetAndLocalId(req, res) {
+    getCardBySetAndLocalId: asyncHandler(async(req, res) => {
         const startTime = Date.now();
         try {
             const { setId, localId } = req.params;
@@ -106,9 +107,9 @@ export const cardController = {
             console.error(`❌ getCardBySetAndLocalId failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async getCardBySdkId(req, res) {
+    getCardBySdkId: asyncHandler(async(req, res) => {
         const startTime = Date.now();
         try {
             const { sdkId } = req.params;
@@ -134,9 +135,9 @@ export const cardController = {
             console.error(`❌ getCardBySdkId failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async getCardPricing(req, res) {
+    getCardPricing: asyncHandler(async(req, res) => {
         const startTime = Date.now();
         try {
             const { localId } = req.params;
@@ -162,9 +163,9 @@ export const cardController = {
             console.error(`❌ getCardPricing failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async batchGetCards(req, res) {
+    batchGetCards: asyncHandler(async(req, res) => {
         const startTime = Date.now();
         try {
             const { cardIds } = req.body;
@@ -196,5 +197,5 @@ export const cardController = {
             console.error(`❌ batchGetCards failed after ${duration}ms:`, error.message);
             ResponseHandler.error(res, error);
         }
-    }
+    })
 };

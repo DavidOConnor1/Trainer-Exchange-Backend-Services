@@ -1,8 +1,9 @@
 import { pokemonAPI } from '../../api/APIClient.js';
+import { asyncHandler } from '../utils/errorHandler.js';
 import { ResponseHandler } from '../utils/responseHandler.js';
 
 export const setController = {
-    async getAllSets(req, res) {
+    getAllSets: asyncHandler(async (req, res) => {
         try {
             const sets = await pokemonAPI.getAllSets();
             ResponseHandler.success(res, sets, `${sets.length} sets retrieved`);
@@ -10,9 +11,9 @@ export const setController = {
             console.error('getAllSets error:', error);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async getCardsBySet(req, res) {
+    getCardsBySet: asyncHandler(async(req, res) => {
         try {
             const { setId } = req.params;
             const { page = 1, pageSize = 20 } = req.query;
@@ -29,9 +30,9 @@ export const setController = {
             console.error('getCardsBySet error:', error);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async getAllSeries(req, res) {
+    getAllSeries: asyncHandler(async(req, res) => {
         try {
             const series = await pokemonAPI.getAllSeriesWithSets?.() || [];
             ResponseHandler.success(res, series, `${series.length} series retrieved`);
@@ -39,9 +40,9 @@ export const setController = {
             console.error('getAllSeries error:', error);
             ResponseHandler.error(res, error);
         }
-    },
+    }),
 
-    async getCardsByType(req, res) {
+    getCardsByType: asyncHandler(async(req, res) => {
         try {
             const { type } = req.params;
             const { page = 1, pageSize = 20 } = req.query;
@@ -61,5 +62,5 @@ export const setController = {
             console.error('getCardsByType error:', error);
             ResponseHandler.error(res, error);
         }
-    }
+    })
 };

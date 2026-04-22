@@ -1,16 +1,60 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+// Get the directory name properly in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Try multiple possible .env locations
+const possiblePaths = [
+    path.join(__dirname, '../../.env'),        // services/.env
+    path.join(__dirname, '../.env'),           // card-data-services/.env
+    path.join(process.cwd(), '.env'),          // current working directory
+];
+
+let envLoaded = false;
+let loadedPath = null;
+
+for (const envPath of possiblePaths) {
+    if (fs.existsSync(envPath)) {
+        dotenv.config({ path: envPath });
+        envLoaded = true;
+        loadedPath = envPath;
+        break;
+    }
+}
+
+if (!envLoaded) {
+    console.error('❌ No .env file found! Looking in:');
+    possiblePaths.forEach(p => console.error(`   - ${p}`));
+    console.error('\n💡 Please create a .env file at: /home/davey/Documents/Trainer-Exchange-Backend-Services/services/.env');
+    process.exit(1);
+}
+
+console.log(`✅ JWT_API_KEY_SECRET loaded: ${!!process.env.JWT_API_KEY_SECRET}`);
+console.log(`✅ PORT loaded: ${process.env.PORT || '5000 (default)'}`);
+
+import { ErrorHandler, asyncHandler } from './utils/errorHandler.js';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import { 
+    requestLogger, 
+    requestDetailsLogger,
+    globalLimiter, 
+    searchLimiter,  
+    securityHeaders
+} from './middleware/index.js';
 import { randomBytes } from 'crypto';
 import TCGdex, { Query } from '@tcgdex/sdk';
-
+import { validateEnvironment } from './utils/envValidator.js';
 import apiRoutes from './routes/index.js';
 import { pokemonAPI, apiObserver } from '../api/APIClient.js';
 import { LoggingObserver, ErrorTrackingObserver } from '../api/APIClient.js';
 
-dotenv.config();
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -28,15 +72,7 @@ app.use((req, res, next) => {
 });
 
 // Security headers middleware
-app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    next();
-});
+app.use(securityHeaders);
 
 // Helmet for additional security headers
 app.use(helmet({
@@ -98,27 +134,6 @@ if (process.env.NODE_ENV === 'production') {
 // RATE LIMITING
 // ============================================
 
-const globalLimiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skipSuccessfulRequests: false,
-    message: { 
-        success: false, 
-        error: 'Too many requests, please try again later.',
-        retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000) / 1000)
-    }
-});
-
-const searchLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 30,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, error: 'Too many search requests, please slow down.' }
-});
-
 app.use('/api/', globalLimiter);
 app.use('/api/search', searchLimiter);
 
@@ -126,27 +141,7 @@ app.use('/api/search', searchLimiter);
 // REQUEST LOGGING
 // ============================================
 
-app.use((req, res, next) => {
-    console.log(`\n[${req.id}] === INCOMING REQUEST ===`);
-    console.log(`[${req.id}] Method: ${req.method}`);
-    console.log(`[${req.id}] URL: ${req.url}`);
-    console.log(`[${req.id}] Query:`, req.query);
-    console.log(`[${req.id}] Params:`, req.params);
-    if (req.method === 'POST' || req.method === 'PUT') {
-        console.log(`[${req.id}] Body:`, req.body);
-    }
-    console.log(`[${req.id}] === END REQUEST ===`);
-    
-    const startTime = Date.now();
-    
-    res.on('finish', () => {
-        const duration = Date.now() - startTime;
-        const statusIcon = res.statusCode >= 200 && res.statusCode < 400 ? '✅' : '❌';
-        console.log(`[${req.id}] ${statusIcon} ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
-    });
-    
-    next();
-});
+app.use(requestLogger, requestDetailsLogger );
 
 // ============================================
 // OBSERVER SETUP
@@ -161,27 +156,7 @@ apiObserver.subscribe(errorTracker);
 // ENVIRONMENT VALIDATION
 // ============================================
 
-function validateEnvironment() {
-    const required = ['PORT'];
-    const missing = required.filter(key => !process.env[key]);
-    
-    if (missing.length > 0) {
-        console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-        if (process.env.NODE_ENV === 'production') {
-            process.exit(1);
-        }
-    }
-    
-    console.log('✅ Environment variables validated');
-    
-    if (process.env.NODE_ENV === 'production') {
-        console.log('🔒 Running in production mode');
-    } else {
-        console.log('⚠️  Running in development mode');
-    }
-}
-
-validateEnvironment();
+app.use(validateEnvironment);
 
 // ============================================
 // TCGdex CONNECTION TEST
@@ -235,7 +210,7 @@ async function testTCGdexConnection() {
 // TEST ENDPOINTS
 // ============================================
 
-app.get('/api/test/random', async (req, res) => {
+app.get('/api/test/random', asyncHandler(async (req, res) => {
     try {
         const tcgdex = new TCGdex('en');
         
@@ -286,9 +261,9 @@ app.get('/api/test/random', async (req, res) => {
         console.error(`[${req.id}] Random card fetch error:`, error.message);
         res.status(500).json({ success: false, error: error.message });
     }
-});
+}));
 
-app.get('/api/test/random/:count', async (req, res) => {
+app.get('/api/test/random/:count', asyncHandler(async (req, res) => {
     try {
         const tcgdex = new TCGdex('en');
         let count = parseInt(req.params.count);
@@ -347,9 +322,9 @@ app.get('/api/test/random/:count', async (req, res) => {
         console.error(`[${req.id}] Random card fetch error:`, error.message);
         res.status(500).json({ success: false, error: error.message });
     }
-});
+}));
 
-app.get('/api/test/search', async (req, res) => {
+app.get('/api/test/search', asyncHandler(async (req, res) => {
     try {
         const tcgdex = new TCGdex('en');
         const query = Query.create()
@@ -372,7 +347,7 @@ app.get('/api/test/search', async (req, res) => {
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
-});
+}));
 
 // ============================================
 // MAIN API ROUTES
@@ -424,7 +399,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // ============================================
-// MONITORING ROUTES - ADD THIS SECTION
+// MONITORING ROUTES 
 // ============================================
 
 import monitoringRoutes from './routes/monitoringRoutes.js';
@@ -445,29 +420,7 @@ app.use((req, res) => {
 });
 
 // Global error handler
-app.use((err, req, res, next) => {
-    console.error(`[${req.id}] ❌ Unhandled Error:`, err.message);
-    
-    if (process.env.NODE_ENV === 'development') {
-        console.error(err.stack);
-    }
-    
-    apiObserver.notify('unhandledError', {
-        error: err.message,
-        stack: err.stack,
-        url: req.url,
-        method: req.method,
-        ip: req.ip,
-        requestId: req.id,
-        timestamp: new Date().toISOString()
-    });
-
-    res.status(500).json({
-        success: false,
-        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
-        requestId: req.id
-    });
-});
+app.use(ErrorHandler);
 
 // ============================================
 // SERVER STARTUP

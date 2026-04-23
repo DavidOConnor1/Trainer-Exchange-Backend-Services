@@ -141,7 +141,10 @@ app.use('/api/search', searchLimiter);
 // REQUEST LOGGING
 // ============================================
 
-app.use(requestLogger, requestDetailsLogger );
+app.use(requestLogger );
+if(process.env.NODE_ENV === 'development'){
+    app.use(requestDetailsLogger);
+}
 
 // ============================================
 // OBSERVER SETUP
@@ -156,7 +159,7 @@ apiObserver.subscribe(errorTracker);
 // ENVIRONMENT VALIDATION
 // ============================================
 
-app.use(validateEnvironment);
+validateEnvironment();
 
 // ============================================
 // TCGdex CONNECTION TEST
@@ -420,7 +423,7 @@ app.use((req, res) => {
 });
 
 // Global error handler
-app.use(ErrorHandler);
+app.use(ErrorHandler.handle);
 
 // ============================================
 // SERVER STARTUP

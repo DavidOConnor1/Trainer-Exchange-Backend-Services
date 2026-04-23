@@ -5,12 +5,16 @@
   "description": "Backend microservices for Next.js frontend (Express + CORS).",
   "type": "module",
   "scripts": {
-    "start": "nodemon server.js",
-    "dev": "nodemon server.js",
+   
+        "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules npx jest --watch",
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules npx jest --coverage",
+
+    
+    "dev": "npx nodemon /card-data-services/server/server.js",
     "lint": "eslint . --ext .js",
     "format": "prettier --write .",
-    "start:users": "node ./user-service/index.js",
-    "start:cards": "node ./card-data-service/server.js"
+    "start": "npx nodemon ./card-data-service/server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.87.1",
@@ -27,7 +31,9 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
+    "@jest/globals": "^30.3.0",
     "eslint": "^9.10.0",
+    "jest": "^30.3.0",
     "nodemon": "^3.1.14",
     "prettier": "^3.3.0"
   }

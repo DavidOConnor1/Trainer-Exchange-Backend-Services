@@ -76,29 +76,29 @@ class PokemonAPI {
     );
 
     this.cardSearch = new CardSearchMethods(
-      this.cache,
-      this.retryHandler,
-      this.logAPICall.bind(this),
-      this.pricingMethods,
+      this.cache, // 1st: cacheManager
+      this.retryHandler, // 2nd: retryHandler
+      this.logAPICall.bind(this), // 3rd: logAPICall
+      this.pricingMethods, // 4th: pricingMethods
     );
 
     this.cardDetails = new CardDetailsMethods(
-      this.cache,
-      this.retryHandler,
-      this.logAPICall.bind(this),
-      this.pricingMethods,
+      this.cache, // 1st: cacheManager
+      this.retryHandler, // 2nd: retryHandler
+      this.logAPICall.bind(this), // 3rd: logAPICall
+      this.pricingMethods, // 4th: pricingMethods
     );
 
     this.setMethods = new SetMethods(
-      this.cache,
-      this.retryHandler,
-      this.logAPICall.bind(this),
+      this.cache, // 1st: cacheManager
+      this.retryHandler, // 2nd: retryHandler
+      this.logAPICall.bind(this), // 3rd: logAPICall
     );
 
     this.batchMethods = new BatchMethods(
-      this.cache,
-      this.retryHandler,
-      this.logAPICall.bind(this),
+      this.cache, // 1st: cacheManager
+      this.retryHandler, // 2nd: retryHandler
+      this.logAPICall.bind(this), // 3rd: logAPICall
     );
 
     PokemonAPI.instance = this;
@@ -137,27 +137,27 @@ class PokemonAPI {
 
   // ========== CARD METHODS ==========
 
-  //Get card by using the identifier on the actual card
+  // Get card by using the identifier on the actual card (localId)
   async getCardByLocalId(localId) {
+    // Get raw card data from cardSearch
     const cardData = await this.cardSearch.getCardByLocalId(localId);
-    return this.cardDetails.getCardById(cardData.id);
+    // Pass the already-fetched card to cardDetails for formatting
+    return this.cardDetails.enrichCardData(cardData);
   }
 
   //get card using its set id and local id
   async getCardBySetAndLocalId(setId, localId) {
+    // Get the raw card data from cardSearch (already has full card object)
     const cardData = await this.cardSearch.getCardBySetAndLocalId(
       setId,
       localId,
     );
-    return this.cardDetails.getCardById(cardData.id);
+
+    // Pass the already-fetched card to cardDetails for formatting
+    return this.cardDetails.enrichCardData(cardData);
   }
 
-  //retrieve card by id provided by the sdk/api
-  async getCardById(cardId) {
-    return this.cardDetails.getCardById(cardId);
-  }
-
-  //works similarly to the previous but it rebuilds the full id after it has been separated
+  // Get card by SDK ID (with all protection patterns)
   async getCardById(cardId) {
     await this.tokenBucket.consume(1);
 
@@ -166,7 +166,12 @@ class PokemonAPI {
         return this.debouncer.debounce(cardId, async () => {
           return this.optimizedCache.getOrSet(
             `card:${cardId}`,
-            () => this.cardDetails.getCardById(cardId),
+            async () => {
+              // Get raw card data from SDK
+              const cardData = await this.tcgdex.card.get(cardId);
+              // Enrich the card data
+              return this.cardDetails.enrichCardData(cardData);
+            },
             3600,
           );
         });

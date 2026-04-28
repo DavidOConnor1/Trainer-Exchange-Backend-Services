@@ -72,32 +72,35 @@ export class CardSearchMethods {
       this.logAPICall("getCardByLocalId", { localId }, false, 0, error);
       throw error;
     }
-  }//end get card by local id 
+  } //end get card by local id
 
   /**
    * Get a card by both set ID and localId (more specific and faster)
    * Example: setId "swsh3", localId "136" finds Furret from Rebel Clash
    */
   async getCardBySetAndLocalId(setId, localId) {
+    // Safety: If cache doesn't have 'get', bypass it
+    const canUseCache = this.cache && typeof this.cache.get === "function";
+
+    // Declare cacheKey outside the if block so it's accessible everywhere
     const cacheKey = `card:set:${setId}:localId:${localId}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached) return cached;
+
+    let cached = null;
+    if (canUseCache) {
+      cached = this.cache.get(cacheKey);
+      if (cached) return cached;
+    }
 
     try {
       const card = await this.retryHandler.withRetry(
         async () => {
-          // First get the set object using direct fetch
           const set = await this.tcgdex.set.get(setId);
-          // Find the card resume in the set's cards array by localId
           const cardResume = set.cards?.find((c) => c.localId === localId);
-
           if (!cardResume) {
             throw new Error(
               `No card found with localId ${localId} in set ${setId}`,
             );
           }
-
-          // Use relationship method to get full card from the resume
           const fullCard = await cardResume.getCard();
           return fullCard;
         },
@@ -106,7 +109,11 @@ export class CardSearchMethods {
       );
 
       this.logAPICall("getCardBySetAndLocalId", { setId, localId }, true, 1);
-      this.cache.set(cacheKey, card, 3600);
+
+      if (canUseCache) {
+        this.cache.set(cacheKey, card, 3600);
+      }
+
       return card;
     } catch (error) {
       this.logAPICall(
@@ -118,8 +125,7 @@ export class CardSearchMethods {
       );
       throw error;
     }
-  }//end get card by local id
-
+  }
   /**
    * Get a card by its full SDK ID (e.g., "swsh3-136")
    * This is the most direct method but uses SDK's internal ID format
@@ -156,7 +162,7 @@ export class CardSearchMethods {
       this.logAPICall("getCardByFullId", { fullId }, false, 0, error);
       throw error;
     }
-  }//end get card by full id
+  } //end get card by full id
 
   /**
    * Main search method - Find cards using multiple filters
@@ -299,7 +305,10 @@ export class CardSearchMethods {
 
               // Build pricing information (direct access, not nested in cardmarket)
               let pricingInfo = null;
-              if (pricingData && (pricingData.avg30 || pricingData.trend || pricingData.avg)) {
+              if (
+                pricingData &&
+                (pricingData.avg30 || pricingData.trend || pricingData.avg)
+              ) {
                 pricingInfo = {
                   avg30: pricingData.avg30 || null,
                   trend: pricingData.trend || null,
@@ -326,7 +335,10 @@ export class CardSearchMethods {
               }
 
               // Fallback: use getImageURL method if available
-              if (!imageUrls.large && typeof fullCard.getImageURL === "function") {
+              if (
+                !imageUrls.large &&
+                typeof fullCard.getImageURL === "function"
+              ) {
                 try {
                   imageUrls.large = fullCard.getImageURL("high", "webp");
                   imageUrls.small = fullCard.getImageURL("low", "webp");
@@ -381,7 +393,7 @@ export class CardSearchMethods {
       this.logAPICall("searchCards", searchParams, false, 0, error);
       throw error;
     }
-  }//end search cards
+  } //end search cards
 
   //Get all cards of a specific type
   async getCardsByType(type) {
@@ -416,7 +428,7 @@ export class CardSearchMethods {
       this.logAPICall("getCardsByType", { type }, false, 0, error);
       throw error;
     }
-  }//end get cards by type
+  } //end get cards by type
 
   //Get all cards with a specific HP value
   async getCardsByHp(hp) {
@@ -450,7 +462,7 @@ export class CardSearchMethods {
       this.logAPICall("getCardsByHp", { hp }, false, 0, error);
       throw error;
     }
-  }//end get cards by hp
+  } //end get cards by hp
 
   //get cards by specific rarity
   async getCardsByRarity(rarity) {
@@ -484,5 +496,5 @@ export class CardSearchMethods {
       this.logAPICall("getCardsByRarity", { rarity }, false, 0, error);
       throw error;
     }
-  }//end get card by rarity
-}//end search methods
+  } //end get card by rarity
+} //end search methods

@@ -5,12 +5,9 @@
   "description": "Backend microservices for Next.js frontend (Express + CORS).",
   "type": "module",
   "scripts": {
-   
-        "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules npx jest --watch",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules npx jest --coverage",
-
-    
     "dev": "npx nodemon /card-data-services/server/server.js",
     "lint": "eslint . --ext .js",
     "format": "prettier --write .",
@@ -35,6 +32,7 @@
     "eslint": "^9.10.0",
     "jest": "^30.3.0",
     "nodemon": "^3.1.14",
-    "prettier": "^3.3.0"
+    "prettier": "^3.3.0",
+    "supertest": "^7.2.2"
   }
 }

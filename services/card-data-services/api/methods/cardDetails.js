@@ -79,3 +79,5 @@ export class CardDetailsMethods {
     };
   }
 } //end card details class
+
+export default CardDetailsMethods;

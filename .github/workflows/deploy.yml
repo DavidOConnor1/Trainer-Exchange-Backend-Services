@@ -11,6 +11,15 @@ env:
   SERVICE_PATH: services
   DOCKER_IMAGE: ghcr.io/${{ github.repository }}
 
+permissions:
+  contents: write
+  security-events: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   security-scan:
     name: 🔒 Security Scan

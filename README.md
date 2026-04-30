@@ -1,12 +1,10 @@
 # Pokémon TCG Backend
 
-https://github.com/DavidOConnor1/Trainer-Exchange-Backend-Services/actions/workflows/deploy.yml/badge.svg
-
-https://img.shields.io/badge/Deployed-Railway-blue
-
-https://img.shields.io/badge/Tests-180%2520passing-brightgreen
-
-https://img.shields.io/badge/Security-SAST%2520%257C%2520DAST%2520%257C%2520Snyk-orange
+[![CI/CD Pipeline](https://github.com/DavidOConnor1/Trainer-Exchange-Backend-Services/actions/workflows/deploy.yml/badge.svg)](https://github.com/DavidOConnor1/Trainer-Exchange-Backend-Services/actions/workflows/deploy.yml)
+[![Deployed](https://img.shields.io/badge/Deployed-Railway-blue)](https://trainer-exchange-backend-services-production.up.railway.app/health)
+[![Tests](https://img.shields.io/badge/Tests-180%20passing-brightgreen)](https://github.com/DavidOConnor1/Trainer-Exchange-Backend-Services/actions)
+[![Node.js](https://img.shields.io/badge/Node.js-22-green)](https://nodejs.org/)
+[![Docker](https://img.shields.io/badge/Docker-Build-blue)](https://railway.app)
 
 # Overview
 

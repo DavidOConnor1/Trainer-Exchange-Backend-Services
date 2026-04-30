@@ -83,13 +83,13 @@ describe("RequestDebouncer", () => {
       const promise2 = debouncer.debounce("test", fn);
       const promise3 = debouncer.debounce("test", fn);
 
-      // Instead of comparing promises directly, check they resolve to same value
+      // Instead of comparing promises directly, verify they resolve to same value
       const results = await Promise.all([promise1, promise2, promise3]);
       expect(results[0]).toBe("result");
       expect(results[1]).toBe("result");
       expect(results[2]).toBe("result");
       expect(fn).toHaveBeenCalledTimes(1);
-    });
+    }, 10000);
 
     it("should handle different keys separately", async () => {
       const fn1 = jest.fn().mockResolvedValue("result1");

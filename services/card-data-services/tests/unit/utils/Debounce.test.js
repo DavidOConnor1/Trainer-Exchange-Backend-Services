@@ -83,13 +83,20 @@ describe("RequestDebouncer", () => {
       const promise2 = debouncer.debounce("test", fn);
       const promise3 = debouncer.debounce("test", fn);
 
-      // Instead of comparing promises directly, verify they resolve to same value
+      // Advance timers to resolve the debounced call
+      jest.advanceTimersByTime(100);
+
+      // Wait for all promises to resolve
       const results = await Promise.all([promise1, promise2, promise3]);
+
+      // All promises should resolve to the same value
       expect(results[0]).toBe("result");
       expect(results[1]).toBe("result");
       expect(results[2]).toBe("result");
+
+      // Function should only be called once
       expect(fn).toHaveBeenCalledTimes(1);
-    }, 10000);
+    }, 5000);
 
     it("should handle different keys separately", async () => {
       const fn1 = jest.fn().mockResolvedValue("result1");

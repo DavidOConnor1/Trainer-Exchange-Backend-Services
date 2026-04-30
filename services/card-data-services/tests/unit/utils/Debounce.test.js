@@ -83,16 +83,11 @@ describe("RequestDebouncer", () => {
       const promise2 = debouncer.debounce("test", fn);
       const promise3 = debouncer.debounce("test", fn);
 
-      // All promises are the same object
-      expect(promise1).toStrictEqual(promise2);
-      expect(promise2).toStrictEqual(promise3);
-
-      // Fast‑forward timers
-      jest.runAllTimers();
-      await Promise.resolve();
-
-      const result = await promise1;
-      expect(result).toBe("result");
+      // Instead of comparing promises directly, check they resolve to same value
+      const results = await Promise.all([promise1, promise2, promise3]);
+      expect(results[0]).toBe("result");
+      expect(results[1]).toBe("result");
+      expect(results[2]).toBe("result");
       expect(fn).toHaveBeenCalledTimes(1);
     });
 

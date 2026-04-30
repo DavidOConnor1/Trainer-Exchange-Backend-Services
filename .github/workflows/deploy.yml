@@ -62,6 +62,8 @@ jobs:
         env:
           NODE_OPTIONS: --experimental-vm-modules
           JWT_API_KEY_SECRET: ${{secrets.JWT_API_KEY_SECRET}}
+          NODE_ENV: test
+          PORT: 5001
 
   docker-build:
     name: 🐳 Build Docker Image

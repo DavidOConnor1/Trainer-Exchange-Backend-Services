@@ -5,10 +5,8 @@
   "description": "Backend microservices for Next.js frontend (Express + CORS).",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/unit",
-    "test:all": "node --test tests/",
-    "test:coverage": "node --experimental-coverage --test tests/",
-    "test:integration": "node --test tests/integration",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --maxWorkers=2 --forceExit",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "security:audit": "npm audit --audit-level=high",
     "security:scan": "npx njsscan .",
     

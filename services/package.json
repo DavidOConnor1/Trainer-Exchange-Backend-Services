@@ -5,9 +5,9 @@
   "description": "Backend microservices for Next.js frontend (Express + CORS).",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/unit",
+    "test": "node --test services/card-data-services/tests",
     "test:all": "node --test tests/",
-    "test:coverage": "node --experimental-coverage --test tests/",
+    "test:coverage": "node --experimental-coverage --test services/card-data-services/tests/",
     "test:integration": "node --test tests/integration",
     "security:audit": "npm audit --audit-level=high",
     "security:scan": "npx njsscan .",

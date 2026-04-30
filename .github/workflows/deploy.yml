@@ -87,9 +87,8 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
       - name: Deploy to Railway
-        run: |
-          cd ${{ env.SERVICE_PATH }}/card-data-services
-          railway up
+        run: railway up --service "Trainer-Exchange-Backend-Services"
+
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       - name: Verify Deployment

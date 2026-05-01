@@ -78,6 +78,7 @@ git clone https://github.com/DavidOConnor1/Trainer-Exchange-Backend-Services.git
 cd Trainer-Exchange-Backend-Services/services
 
 # Install dependencies
+cd into services
 npm ci
 
 # Create environment file

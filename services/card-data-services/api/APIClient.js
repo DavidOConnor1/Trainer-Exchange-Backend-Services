@@ -80,6 +80,7 @@ class PokemonAPI {
       this.retryHandler, // 2nd: retryHandler
       this.logAPICall.bind(this), // 3rd: logAPICall
       this.pricingMethods, // 4th: pricingMethods
+      this.setMethods, //5th: setMethods
     );
 
     this.cardDetails = new CardDetailsMethods(

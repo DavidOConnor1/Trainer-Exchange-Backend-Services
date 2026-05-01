@@ -4,7 +4,7 @@ import { Query } from "@tcgdex/sdk";
 import getTCGdexClient from "../tcgdexClient.js";
 // Import pricing methods to fetch Cardmarket price data for cards
 import { CardPricingMethods } from "./cardPricing.js";
-
+import { SetMethods } from "./setMethods.js";
 /**
  * CardSearchMethods - Handles all card search and retrieval operations
  * Uses TCGdex SDK with proper Query syntax and relationship methods
@@ -26,6 +26,7 @@ export class CardSearchMethods {
       retryHandler,
       logAPICall,
     );
+    this.setMethods = this.setMethods;
   }
 
   async getCardByLocalId(localId) {
@@ -169,7 +170,21 @@ export class CardSearchMethods {
             query = query.contains("types", types);
           }
           if (set && set.trim()) {
-            query = query.equal("set.id", set);
+            const setInput = set.trim();
+            const looksLikeId =
+              /^[a-z]+\d/.test(setInput) || setInput.includes(".");
+
+            if (looksLikeId) {
+              query = query.equal("set.id", setInput);
+            } else if (this.setMethods) {
+              const allSets = await this.setMethods.getAllSets();
+              const match = allSets.find(
+                (s) =>
+                  s.name.toLowerCase() === setInput.toLowerCase() ||
+                  s.name.toLowerCase().includes(setInput.toLowerCase()),
+              );
+              query = query.equal("set.id", match ? match.id : setInput);
+            }
           }
           if (rarity && rarity.trim()) {
             query = query.equal("rarity", rarity);
@@ -185,14 +200,17 @@ export class CardSearchMethods {
 
           const allMatches = await this.tcgdex.card.list(query);
 
-          let filteredMatches = allMatches;
+          // Filter out Pocket series cards
+          let filteredMatches = allMatches.filter((card) => {
+            return card.set?.serie?.name !== "Pokémon TCG Pocket";
+          });
+
+          // Then apply localId filter if present
           if (localId && localId.trim()) {
-            filteredMatches = allMatches.filter(
+            filteredMatches = filteredMatches.filter(
               (card) => card.localId === localId.trim(),
             );
           }
-
-          const totalCount = filteredMatches.length;
 
           const start = (page - 1) * pageSize;
           const end = start + pageSize;
@@ -206,6 +224,11 @@ export class CardSearchMethods {
                   await this.pricingMethods.fetchCardWithPricing(fullCard.id);
                 const set = await fullCard.getSet();
                 const serie = set ? await set.getSerie() : null;
+
+                // Skip Pocket series cards
+                if (serie && serie.name === "Pokémon TCG Pocket") {
+                  return null;
+                }
 
                 return {
                   fullCard,
@@ -229,7 +252,10 @@ export class CardSearchMethods {
             }),
           );
 
-          const transformedCards = fullCards.map(
+          // Remove nulls (Pocket cards)
+          const filteredFullCards = fullCards.filter((card) => card !== null);
+          const totalCount = filteredFullCards.length;
+          const transformedCards = filteredFullCards.map(
             ({
               fullCard,
               pricingData,

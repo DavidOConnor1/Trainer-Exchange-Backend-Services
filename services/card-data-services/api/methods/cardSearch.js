@@ -200,36 +200,75 @@ export class CardSearchMethods {
 
           const allMatches = await this.tcgdex.card.list(query);
 
-          // Filter out Pocket series cards
-          let filteredMatches = allMatches.filter((card) => {
-            return card.set?.serie?.name !== "Pokémon TCG Pocket";
-          });
-
-          // Then apply localId filter if present
           if (localId && localId.trim()) {
-            filteredMatches = filteredMatches.filter(
+            const filteredByLocalId = allMatches.filter(
               (card) => card.localId === localId.trim(),
             );
+
+            const totalCount = filteredByLocalId.length;
+            const start = (page - 1) * pageSize;
+            const end = start + pageSize;
+            const paginatedMatches = filteredByLocalId.slice(start, end);
+
+            const fullCards = await Promise.all(
+              paginatedMatches.map(async (resume) => {
+                try {
+                  const fullCard = await resume.getCard();
+                  const set = await fullCard.getSet();
+                  const serie = set ? await set.getSerie() : null;
+
+                  if (serie && serie.name === "Pokémon TCG Pocket") {
+                    return null;
+                  }
+
+                  const pricingResult =
+                    await this.pricingMethods.fetchCardWithPricing(fullCard.id);
+                  return {
+                    fullCard,
+                    pricingData: pricingResult.pricing,
+                    hasPricing: pricingResult.hasPricing,
+                    relatedSet: set,
+                    relatedSerie: serie,
+                  };
+                } catch (error) {
+                  return {
+                    fullCard: resume,
+                    pricingData: null,
+                    hasPricing: false,
+                    relatedSet: null,
+                    relatedSerie: null,
+                  };
+                }
+              }),
+            );
+
+            const filteredFullCards = fullCards.filter((card) => card !== null);
+            const transformedCards = filteredFullCards.map((cardData) =>
+              this.transformCardData(cardData),
+            );
+
+            return {
+              data: transformedCards,
+              page,
+              pageSize,
+              total: totalCount,
+              hasMore: page * pageSize < totalCount,
+            };
           }
 
-          const start = (page - 1) * pageSize;
-          const end = start + pageSize;
-          const paginatedMatches = filteredMatches.slice(start, end);
-
-          const fullCards = await Promise.all(
-            paginatedMatches.map(async (resume) => {
+          const fullCardsWithDetails = await Promise.all(
+            allMatches.map(async (resume) => {
               try {
                 const fullCard = await resume.getCard();
-                const pricingResult =
-                  await this.pricingMethods.fetchCardWithPricing(fullCard.id);
                 const set = await fullCard.getSet();
                 const serie = set ? await set.getSerie() : null;
 
-                // Skip Pocket series cards
                 if (serie && serie.name === "Pokémon TCG Pocket") {
                   return null;
                 }
 
+                const pricingResult =
+                  await this.pricingMethods.fetchCardWithPricing(fullCard.id);
                 return {
                   fullCard,
                   pricingData: pricingResult.pricing,
@@ -238,9 +277,6 @@ export class CardSearchMethods {
                   relatedSerie: serie,
                 };
               } catch (error) {
-                console.log(
-                  `  ⚠️ Failed to fetch full details for ${resume.id}: ${error.message}`,
-                );
                 return {
                   fullCard: resume,
                   pricingData: null,
@@ -252,116 +288,17 @@ export class CardSearchMethods {
             }),
           );
 
-          // Remove nulls (Pocket cards)
-          const filteredFullCards = fullCards.filter((card) => card !== null);
-          const totalCount = filteredFullCards.length;
-          const transformedCards = filteredFullCards.map(
-            ({
-              fullCard,
-              pricingData,
-              hasPricing,
-              relatedSet,
-              relatedSerie,
-            }) => {
-              let setInfo = null;
-              if (relatedSet) {
-                setInfo = {
-                  id: relatedSet.id,
-                  name: relatedSet.name,
-                  series: relatedSerie?.name,
-                  releaseDate: relatedSet.releaseDate,
-                  totalCards: relatedSet.total,
-                  logoUrl: relatedSet.logoUrl,
-                  symbolUrl: relatedSet.symbolUrl,
-                };
-              } else if (fullCard.set) {
-                setInfo = {
-                  id: fullCard.set.id,
-                  name: fullCard.set.name,
-                  series: fullCard.set.serie?.name,
-                };
-              }
+          const filteredCards = fullCardsWithDetails.filter(
+            (card) => card !== null,
+          );
+          const totalCount = filteredCards.length;
 
-              let pricingInfo = null;
-              if (
-                pricingData &&
-                (pricingData.avg30 || pricingData.trend || pricingData.avg)
-              ) {
-                pricingInfo = {
-                  avg30: pricingData.avg30 || null,
-                  trend: pricingData.trend || null,
-                  avg: pricingData.avg || null,
-                  low: pricingData.low || null,
-                  avg1: pricingData.avg1 || null,
-                  avg7: pricingData.avg7 || null,
-                };
-              }
+          const start = (page - 1) * pageSize;
+          const end = start + pageSize;
+          const paginatedCards = filteredCards.slice(start, end);
 
-              let imageUrls = {
-                small: null,
-                large: null,
-              };
-
-              if (typeof fullCard.getImageURL === "function") {
-                try {
-                  imageUrls.large = fullCard.getImageURL("high", "webp");
-                  imageUrls.small = fullCard.getImageURL("low", "webp");
-                } catch (e) {
-                  console.warn(
-                    `getImageURL failed for ${fullCard.id}:`,
-                    e.message,
-                  );
-                }
-              }
-
-              if (!imageUrls.large && fullCard.id) {
-                try {
-                  const parts = fullCard.id.split("-");
-                  if (parts.length >= 2) {
-                    const localIdPart = parts.pop();
-                    const setIdPart = parts.join("-");
-                    const baseUrl = `https://assets.tcgdex.net/en/${setIdPart}/${setIdPart}/${localIdPart}`;
-                    imageUrls.large = `${baseUrl}/high.webp`;
-                    imageUrls.small = `${baseUrl}/low.webp`;
-                  }
-                } catch (e) {
-                  console.warn(
-                    `Manual URL construction failed for ${fullCard.id}:`,
-                    e.message,
-                  );
-                }
-              }
-
-              if (!imageUrls.large) {
-                imageUrls.large =
-                  fullCard.images?.large || fullCard.image || null;
-              }
-              if (!imageUrls.small) {
-                imageUrls.small = fullCard.images?.small || null;
-              }
-
-              return {
-                id: fullCard.id,
-                localId: fullCard.localId,
-                name: fullCard.name,
-                number: fullCard.number,
-                category: fullCard.category,
-                rarity: fullCard.rarity,
-                hp: fullCard.hp,
-                types: fullCard.types || [],
-                stage: fullCard.stage,
-                evolvesFrom: fullCard.evolvesFrom,
-                retreat: fullCard.retreat,
-                regulationMark: fullCard.regulationMark,
-                set: setInfo,
-                images: imageUrls,
-                pricing: pricingInfo,
-                hasPricing: hasPricing,
-                artist: fullCard.artist,
-                flavorText: fullCard.flavorText,
-                nationalPokedexNumbers: fullCard.nationalPokedexNumbers,
-              };
-            },
+          const transformedCards = paginatedCards.map((cardData) =>
+            this.transformCardData(cardData),
           );
 
           return {
@@ -383,6 +320,96 @@ export class CardSearchMethods {
       this.logAPICall("searchCards", searchParams, false, 0, error);
       throw error;
     }
+  }
+
+  transformCardData({
+    fullCard,
+    pricingData,
+    hasPricing,
+    relatedSet,
+    relatedSerie,
+  }) {
+    let setInfo = null;
+    if (relatedSet) {
+      setInfo = {
+        id: relatedSet.id,
+        name: relatedSet.name,
+        series: relatedSerie?.name,
+        releaseDate: relatedSet.releaseDate,
+        totalCards: relatedSet.total,
+        logoUrl: relatedSet.logoUrl,
+        symbolUrl: relatedSet.symbolUrl,
+      };
+    } else if (fullCard.set) {
+      setInfo = {
+        id: fullCard.set.id,
+        name: fullCard.set.name,
+        series: fullCard.set.serie?.name,
+      };
+    }
+
+    let pricingInfo = null;
+    if (
+      pricingData &&
+      (pricingData.avg30 || pricingData.trend || pricingData.avg)
+    ) {
+      pricingInfo = {
+        avg30: pricingData.avg30 || null,
+        trend: pricingData.trend || null,
+        avg: pricingData.avg || null,
+        low: pricingData.low || null,
+        avg1: pricingData.avg1 || null,
+        avg7: pricingData.avg7 || null,
+      };
+    }
+
+    let imageUrls = { small: null, large: null };
+
+    if (typeof fullCard.getImageURL === "function") {
+      try {
+        imageUrls.large = fullCard.getImageURL("high", "webp");
+        imageUrls.small = fullCard.getImageURL("low", "webp");
+      } catch (e) {}
+    }
+
+    if (!imageUrls.large && fullCard.id) {
+      try {
+        const parts = fullCard.id.split("-");
+        if (parts.length >= 2) {
+          const localIdPart = parts.pop();
+          const setIdPart = parts.join("-");
+          const baseUrl = `https://assets.tcgdex.net/en/${setIdPart}/${setIdPart}/${localIdPart}`;
+          imageUrls.large = `${baseUrl}/high.webp`;
+          imageUrls.small = `${baseUrl}/low.webp`;
+        }
+      } catch (e) {}
+    }
+
+    if (!imageUrls.large)
+      imageUrls.large = fullCard.images?.large || fullCard.image || null;
+    if (!imageUrls.small) imageUrls.small = fullCard.images?.small || null;
+
+    return {
+      id: fullCard.id,
+      localId: fullCard.localId,
+      name: fullCard.name,
+      number: fullCard.number,
+      category: fullCard.category,
+      rarity: fullCard.rarity,
+      hp: fullCard.hp,
+      types: fullCard.types || [],
+      stage: fullCard.stage,
+      evolvesFrom: fullCard.evolvesFrom,
+      retreat: fullCard.retreat,
+      regulationMark: fullCard.regulationMark,
+      set: setInfo,
+      images: imageUrls,
+      pricing: pricingInfo,
+      hasPricing: hasPricing,
+      artist: fullCard.artist,
+      flavorText: fullCard.flavorText,
+      nationalPokedexNumbers: fullCard.nationalPokedexNumbers || [],
+    };
   }
 
   async getCardsByType(type) {

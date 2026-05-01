@@ -21,7 +21,6 @@ export class BatchMethods {
           let card = this.cache.get(cacheKey);
 
           if (!card) {
-            // FIX: Use card.get() instead of fetch('card', id)
             const cardData = await this.retryHandler.withRetry(
               async () => {
                 return await this.tcgdex.card.get(id);
@@ -83,7 +82,7 @@ export class BatchMethods {
         if (cached) return cached;
 
         try {
-          // FIX: Use card.get() instead of card.get
+          //  Use card.get() instead of card.get
           const fullCard = await this.retryHandler.withRetry(
             async () => {
               return await this.tcgdex.card.get(cardId);

@@ -185,8 +185,26 @@ export class CardSearchMethods {
           }
 
           query = query.sort(sortBy, sortOrder);
-          query = query.paginate(page, pageSize);
 
+          const countQuery = Query.create();
+          if (localId && localId.trim())
+            countQuery.equal("localId", localId.trim());
+          if (name && name.trim()) {
+            if (exactName) countQuery.equal("name", name.trim());
+            else countQuery.contains("name", name.trim());
+          }
+          if (types && types.length > 0) countQuery.contains("types", types);
+          if (set && set.trim()) countQuery.equal("set.id", set);
+          if (rarity && rarity.trim()) countQuery.equal("rarity", rarity);
+          if (minHp !== null && !isNaN(minHp))
+            countQuery.greaterOrEqualThan("hp", minHp);
+          if (maxHp !== null && !isNaN(maxHp))
+            countQuery.lesserOrEqualThan("hp", maxHp);
+
+          const allMatches = await this.tcgdex.card.list(countQuery);
+          const totalCount = allMatches.length;
+
+          query = query.paginate(page, pageSize);
           const cardResumes = await this.tcgdex.card.list(query);
 
           const fullCards = await Promise.all(
@@ -333,8 +351,8 @@ export class CardSearchMethods {
             data: transformedCards,
             page,
             pageSize,
-            total: transformedCards.length,
-            hasMore: cardResumes.length === pageSize,
+            total: totalCount,
+            hasMore: page * pageSize < totalCount,
           };
         },
         "searchCards",

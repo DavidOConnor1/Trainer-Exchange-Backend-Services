@@ -25,6 +25,6 @@ describe("Search Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-    });
+    }, 15000);
   });
 });

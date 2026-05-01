@@ -17,12 +17,10 @@ export class CardSearchMethods {
    * @param {Function} logAPICall - Logs API calls for monitoring
    */
   constructor(cacheManager, retryHandler, logAPICall) {
-    // Get the shared TCGdex client instance (singleton pattern)
     this.tcgdex = getTCGdexClient();
     this.cache = cacheManager;
     this.retryHandler = retryHandler;
     this.logAPICall = logAPICall;
-    // Initialize pricing methods to fetch Cardmarket data
     this.pricingMethods = new CardPricingMethods(
       cacheManager,
       retryHandler,
@@ -30,31 +28,19 @@ export class CardSearchMethods {
     );
   }
 
-  /**
-   * Get a card by its localId (card number) across all sets
-   * Example: localId "136" finds Furret from any set
-   */
   async getCardByLocalId(localId) {
-    // Create unique cache key for this localId
     const cacheKey = `card:localId:${localId}`;
-    // Check cache first to avoid unnecessary API calls
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
     try {
-      // Use retry handler to automatically retry on failure
       const card = await this.retryHandler.withRetry(
         async () => {
-          // Build query to search for card by its localId
           const query = Query.create().equal("localId", localId).paginate(1, 1);
-
-          // Execute search across all sets
           const cards = await this.tcgdex.card.list(query);
           if (!cards || cards.length === 0) {
             throw new Error(`No card found with localId: ${localId}`);
           }
-
-          // Use relationship method to get full card details from the resume
           const fullCard = await cards[0].getCard();
           return fullCard;
         },
@@ -62,27 +48,17 @@ export class CardSearchMethods {
         { localId },
       );
 
-      // Log successful API call for monitoring
       this.logAPICall("getCardByLocalId", { localId }, true, 1);
-      // Cache for 1 hour (3600 seconds)
       this.cache.set(cacheKey, card, 3600);
       return card;
     } catch (error) {
-      // Log failed API call
       this.logAPICall("getCardByLocalId", { localId }, false, 0, error);
       throw error;
     }
-  } //end get card by local id
+  }
 
-  /**
-   * Get a card by both set ID and localId (more specific and faster)
-   * Example: setId "swsh3", localId "136" finds Furret from Rebel Clash
-   */
   async getCardBySetAndLocalId(setId, localId) {
-    // Safety: If cache doesn't have 'get', bypass it
     const canUseCache = this.cache && typeof this.cache.get === "function";
-
-    // Declare cacheKey outside the if block so it's accessible everywhere
     const cacheKey = `card:set:${setId}:localId:${localId}`;
 
     let cached = null;
@@ -126,10 +102,7 @@ export class CardSearchMethods {
       throw error;
     }
   }
-  /**
-   * Get a card by its full SDK ID (e.g., "swsh3-136")
-   * This is the most direct method but uses SDK's internal ID format
-   */
+
   async getCardByFullId(fullId) {
     const cacheKey = `card:full:${fullId}`;
     const cached = this.cache.get(cacheKey);
@@ -138,14 +111,10 @@ export class CardSearchMethods {
     try {
       const card = await this.retryHandler.withRetry(
         async () => {
-          // Direct fetch using SDK's card.get method
           const cardData = await this.tcgdex.card.get(fullId);
-          // Use relationship to get the card's set
           const set = await cardData.getSet();
-          // Use relationship to get the set's serie
           const serie = set ? await set.getSerie() : null;
 
-          // Attach related data to card for convenience
           cardData.relatedSet = set;
           cardData.relatedSerie = serie;
 
@@ -162,17 +131,12 @@ export class CardSearchMethods {
       this.logAPICall("getCardByFullId", { fullId }, false, 0, error);
       throw error;
     }
-  } //end get card by full id
+  }
 
-  /**
-   * Main search method - Find cards using multiple filters
-   * Supports name, type, set, rarity, HP range, and pagination
-   */
   async searchCards(searchParams = {}) {
-    // Destructure search parameters with default values
     const {
       name = "",
-      exactName = false, // If true, matches exact name instead of partial
+      exactName = false,
       types = [],
       set = "",
       rarity = "",
@@ -185,7 +149,6 @@ export class CardSearchMethods {
       sortOrder = "ASC",
     } = searchParams;
 
-    // Create cache key from all search parameters
     const cacheKey = `search:${JSON.stringify(searchParams)}`;
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
@@ -193,15 +156,11 @@ export class CardSearchMethods {
     try {
       const result = await this.retryHandler.withRetry(
         async () => {
-          // Initialize a new query builder
           let query = Query.create();
 
-          // --- BUILD SEARCH FILTERS ---
-          // Filter by localId (exact card number)
           if (localId && localId.trim()) {
             query = query.equal("localId", localId.trim());
           }
-          // Filter by card name (partial or exact match)
           if (name && name.trim()) {
             if (exactName) {
               query = query.equal("name", name.trim());
@@ -209,51 +168,39 @@ export class CardSearchMethods {
               query = query.contains("name", name.trim());
             }
           }
-          // Filter by card types (Fire, Water, Grass, etc.)
           if (types && types.length > 0) {
             query = query.contains("types", types);
           }
-          // Filter by set ID
           if (set && set.trim()) {
             query = query.equal("set.id", set);
           }
-          // Filter by rarity
           if (rarity && rarity.trim()) {
             query = query.equal("rarity", rarity);
           }
-          // Filter by minimum HP
           if (minHp !== null && !isNaN(minHp)) {
             query = query.greaterOrEqualThan("hp", minHp);
           }
-          // Filter by maximum HP
           if (maxHp !== null && !isNaN(maxHp)) {
             query = query.lesserOrEqualThan("hp", maxHp);
           }
 
-          // Add sorting and pagination
           query = query.sort(sortBy, sortOrder);
           query = query.paginate(page, pageSize);
 
-          // Execute search - returns card resumes (basic info only)
           const cardResumes = await this.tcgdex.card.list(query);
 
-          // For each search result, fetch full card details including pricing
           const fullCards = await Promise.all(
             cardResumes.map(async (resume) => {
               try {
-                // Get full card using relationship method
                 const fullCard = await resume.getCard();
-                // Fetch pricing data for this card
                 const pricingResult =
                   await this.pricingMethods.fetchCardWithPricing(fullCard.id);
-                // Get related set using relationship
                 const set = await fullCard.getSet();
-                // Get related serie using relationship
                 const serie = set ? await set.getSerie() : null;
 
                 return {
                   fullCard,
-                  pricingData: pricingResult.pricing, // Store pricing data
+                  pricingData: pricingResult.pricing,
                   hasPricing: pricingResult.hasPricing,
                   relatedSet: set,
                   relatedSerie: serie,
@@ -262,7 +209,6 @@ export class CardSearchMethods {
                 console.log(
                   `  ⚠️ Failed to fetch full details for ${resume.id}: ${error.message}`,
                 );
-                // Return resume as fallback if full fetch fails
                 return {
                   fullCard: resume,
                   pricingData: null,
@@ -274,7 +220,6 @@ export class CardSearchMethods {
             }),
           );
 
-          // Transform card data into clean, serializable objects for API response
           const transformedCards = fullCards.map(
             ({
               fullCard,
@@ -283,7 +228,6 @@ export class CardSearchMethods {
               relatedSet,
               relatedSerie,
             }) => {
-              // Build set information from related set or card data
               let setInfo = null;
               if (relatedSet) {
                 setInfo = {
@@ -303,7 +247,6 @@ export class CardSearchMethods {
                 };
               }
 
-              // Build pricing information (direct access, not nested in cardmarket)
               let pricingInfo = null;
               if (
                 pricingData &&
@@ -319,35 +262,49 @@ export class CardSearchMethods {
                 };
               }
 
-              // Extract image URLs from various possible locations
               let imageUrls = {
                 small: null,
                 large: null,
               };
 
-              if (fullCard.images) {
-                imageUrls.small = fullCard.images.small;
-                imageUrls.large = fullCard.images.large;
-              }
-
-              if (!imageUrls.large && fullCard.image) {
-                imageUrls.large = fullCard.image;
-              }
-
-              // Fallback: use getImageURL method if available
-              if (
-                !imageUrls.large &&
-                typeof fullCard.getImageURL === "function"
-              ) {
+              if (typeof fullCard.getImageURL === "function") {
                 try {
                   imageUrls.large = fullCard.getImageURL("high", "webp");
                   imageUrls.small = fullCard.getImageURL("low", "webp");
                 } catch (e) {
-                  // Silently fail - image not available
+                  console.warn(
+                    `getImageURL failed for ${fullCard.id}:`,
+                    e.message,
+                  );
                 }
               }
 
-              // Return clean card object for API response
+              if (!imageUrls.large && fullCard.id) {
+                try {
+                  const parts = fullCard.id.split("-");
+                  if (parts.length >= 2) {
+                    const localIdPart = parts.pop();
+                    const setIdPart = parts.join("-");
+                    const baseUrl = `https://assets.tcgdex.net/en/${setIdPart}/${setIdPart}/${localIdPart}`;
+                    imageUrls.large = `${baseUrl}/high.webp`;
+                    imageUrls.small = `${baseUrl}/low.webp`;
+                  }
+                } catch (e) {
+                  console.warn(
+                    `Manual URL construction failed for ${fullCard.id}:`,
+                    e.message,
+                  );
+                }
+              }
+
+              if (!imageUrls.large) {
+                imageUrls.large =
+                  fullCard.images?.large || fullCard.image || null;
+              }
+              if (!imageUrls.small) {
+                imageUrls.small = fullCard.images?.small || null;
+              }
+
               return {
                 id: fullCard.id,
                 localId: fullCard.localId,
@@ -372,7 +329,6 @@ export class CardSearchMethods {
             },
           );
 
-          // Return paginated results
           return {
             data: transformedCards,
             page,
@@ -385,7 +341,6 @@ export class CardSearchMethods {
         searchParams,
       );
 
-      // Log successful search and cache results for 5 minutes
       this.logAPICall("searchCards", searchParams, true, result.data.length);
       this.cache.set(cacheKey, result, 300);
       return result;
@@ -393,9 +348,8 @@ export class CardSearchMethods {
       this.logAPICall("searchCards", searchParams, false, 0, error);
       throw error;
     }
-  } //end search cards
+  }
 
-  //Get all cards of a specific type
   async getCardsByType(type) {
     const cacheKey = `type:${type}`;
     const cached = this.cache.get(cacheKey);
@@ -404,14 +358,12 @@ export class CardSearchMethods {
     try {
       const cards = await this.retryHandler.withRetry(
         async () => {
-          // Query for cards containing the specified type
           const query = Query.create()
             .contains("types", [type])
             .sort("localId", "ASC");
 
           const cardResumes = await this.tcgdex.card.list(query);
 
-          // Convert each resume to full card using relationship
           const fullCards = await Promise.all(
             cardResumes.map((resume) => resume.getCard()),
           );
@@ -428,9 +380,8 @@ export class CardSearchMethods {
       this.logAPICall("getCardsByType", { type }, false, 0, error);
       throw error;
     }
-  } //end get cards by type
+  }
 
-  //Get all cards with a specific HP value
   async getCardsByHp(hp) {
     const cacheKey = `hp:${hp}`;
     const cached = this.cache.get(cacheKey);
@@ -439,7 +390,6 @@ export class CardSearchMethods {
     try {
       const cards = await this.retryHandler.withRetry(
         async () => {
-          // Query for cards with exact HP value
           const query = Query.create()
             .equal("hp", parseInt(hp))
             .sort("localId", "ASC");
@@ -462,9 +412,8 @@ export class CardSearchMethods {
       this.logAPICall("getCardsByHp", { hp }, false, 0, error);
       throw error;
     }
-  } //end get cards by hp
+  }
 
-  //get cards by specific rarity
   async getCardsByRarity(rarity) {
     const cacheKey = `rarity:${rarity}`;
     const cached = this.cache.get(cacheKey);
@@ -473,7 +422,6 @@ export class CardSearchMethods {
     try {
       const cards = await this.retryHandler.withRetry(
         async () => {
-          // Query for cards with exact rarity
           const query = Query.create()
             .equal("rarity", rarity)
             .sort("localId", "ASC");
@@ -496,5 +444,5 @@ export class CardSearchMethods {
       this.logAPICall("getCardsByRarity", { rarity }, false, 0, error);
       throw error;
     }
-  } //end get card by rarity
-} //end search methods
+  }
+}

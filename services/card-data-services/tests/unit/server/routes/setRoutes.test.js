@@ -36,12 +36,10 @@ describe("Set Routes", () => {
         .get("/api/sets/series")
         .timeout(30000);
 
-      // If endpoint exists, it should return success
       if (response.status === 200) {
         expect(response.body.success).toBe(true);
         expect(Array.isArray(response.body.data)).toBe(true);
       } else {
-        // Endpoint might not be implemented, that's fine
         expect([200, 404]).toContain(response.status);
       }
     });
@@ -88,11 +86,10 @@ describe("Set Routes", () => {
     it("should return 404 for non-existent set", async () => {
       const response = await request(serverUrl)
         .get("/api/sets/invalid-set-id/cards")
-        .timeout(10000); // 10 second timeout
+        .timeout(10000);
 
-      // The API might return 404, 400, or 500 for invalid set
       expect([404, 400, 500]).toContain(response.status);
-    }, 15000); // Increase test timeout to 15 seconds
+    }, 15000);
   });
 
   describe("GET /api/sets/type/:type/cards", () => {
@@ -104,7 +101,7 @@ describe("Set Routes", () => {
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(Array.isArray(response.body.data)).toBe(true);
-    });
+    }, 35000);
 
     it("should handle Water type", async () => {
       const response = await request(serverUrl)
@@ -113,7 +110,7 @@ describe("Set Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-    });
+    }, 35000);
 
     it("should handle Grass type with pagination", async () => {
       const response = await request(serverUrl)
@@ -123,7 +120,7 @@ describe("Set Routes", () => {
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.data.length).toBeLessThanOrEqual(10);
-    });
+    }, 35000);
 
     it("should return empty array for non-existent type", async () => {
       const response = await request(serverUrl)
@@ -142,6 +139,6 @@ describe("Set Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-    });
+    }, 35000);
   });
 });

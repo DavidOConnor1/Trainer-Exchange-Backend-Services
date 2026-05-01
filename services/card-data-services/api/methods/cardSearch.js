@@ -158,9 +158,6 @@ export class CardSearchMethods {
         async () => {
           let query = Query.create();
 
-          if (localId && localId.trim()) {
-            query = query.equal("localId", localId.trim());
-          }
           if (name && name.trim()) {
             if (exactName) {
               query = query.equal("name", name.trim());
@@ -186,29 +183,23 @@ export class CardSearchMethods {
 
           query = query.sort(sortBy, sortOrder);
 
-          const countQuery = Query.create();
-          if (localId && localId.trim())
-            countQuery.equal("localId", localId.trim());
-          if (name && name.trim()) {
-            if (exactName) countQuery.equal("name", name.trim());
-            else countQuery.contains("name", name.trim());
+          const allMatches = await this.tcgdex.card.list(query);
+
+          let filteredMatches = allMatches;
+          if (localId && localId.trim()) {
+            filteredMatches = allMatches.filter(
+              (card) => card.localId === localId.trim(),
+            );
           }
-          if (types && types.length > 0) countQuery.contains("types", types);
-          if (set && set.trim()) countQuery.equal("set.id", set);
-          if (rarity && rarity.trim()) countQuery.equal("rarity", rarity);
-          if (minHp !== null && !isNaN(minHp))
-            countQuery.greaterOrEqualThan("hp", minHp);
-          if (maxHp !== null && !isNaN(maxHp))
-            countQuery.lesserOrEqualThan("hp", maxHp);
 
-          const allMatches = await this.tcgdex.card.list(countQuery);
-          const totalCount = allMatches.length;
+          const totalCount = filteredMatches.length;
 
-          query = query.paginate(page, pageSize);
-          const cardResumes = await this.tcgdex.card.list(query);
+          const start = (page - 1) * pageSize;
+          const end = start + pageSize;
+          const paginatedMatches = filteredMatches.slice(start, end);
 
           const fullCards = await Promise.all(
-            cardResumes.map(async (resume) => {
+            paginatedMatches.map(async (resume) => {
               try {
                 const fullCard = await resume.getCard();
                 const pricingResult =

@@ -215,8 +215,9 @@ export class CardSearchMethods {
           const totalEstimate = filteredResumes.length;
 
           // Paginate first – only fetch details for the current page
+          const fetchSize = pageSize + 10;
           const start = (page - 1) * pageSize;
-          const end = start + pageSize;
+          const end = start + fetchSize;
           const pageResumes = filteredResumes.slice(start, end);
 
           // Fetch full details only for the 5–20 cards on this page

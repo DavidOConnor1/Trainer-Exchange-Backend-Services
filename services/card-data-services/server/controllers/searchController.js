@@ -170,7 +170,7 @@ export const searchController = {
         `📊 Pricing summary: ${cardsWithPricing}/${cleanedData.length} cards have pricing data`,
       );
 
-      const hasMore = cleanedData.length === parseInt(pageSize);
+      const hasMore = result.hasMore;
       const duration = Date.now() - startTime;
 
       console.log(

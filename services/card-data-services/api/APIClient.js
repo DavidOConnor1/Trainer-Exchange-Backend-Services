@@ -75,6 +75,12 @@ class PokemonAPI {
       this.logAPICall.bind(this),
     );
 
+    this.setMethods = new SetMethods(
+      this.cache, // 1st: cacheManager
+      this.retryHandler, // 2nd: retryHandler
+      this.logAPICall.bind(this), // 3rd: logAPICall
+    );
+
     this.cardSearch = new CardSearchMethods(
       this.cache, // 1st: cacheManager
       this.retryHandler, // 2nd: retryHandler
@@ -88,12 +94,6 @@ class PokemonAPI {
       this.retryHandler, // 2nd: retryHandler
       this.logAPICall.bind(this), // 3rd: logAPICall
       this.pricingMethods, // 4th: pricingMethods
-    );
-
-    this.setMethods = new SetMethods(
-      this.cache, // 1st: cacheManager
-      this.retryHandler, // 2nd: retryHandler
-      this.logAPICall.bind(this), // 3rd: logAPICall
     );
 
     this.batchMethods = new BatchMethods(
@@ -205,6 +205,10 @@ class PokemonAPI {
 
   async getCardsBySet(setId, page, pageSize) {
     return this.setMethods.getCardsBySet(setId, page, pageSize);
+  }
+
+  async getCardsByType(type, page, pageSize) {
+    return this.cardSearch.getCardsByType(type, page, pageSize);
   }
 
   // ========== BATCH METHODS ==========

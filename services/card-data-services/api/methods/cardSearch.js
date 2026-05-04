@@ -5,28 +5,28 @@ import getTCGdexClient from "../tcgdexClient.js";
 // Import pricing methods to fetch Cardmarket price data for cards
 import { CardPricingMethods } from "./cardPricing.js";
 import { SetMethods } from "./setMethods.js";
-/**
- * CardSearchMethods - Handles all card search and retrieval operations
- * Uses TCGdex SDK with proper Query syntax and relationship methods
- */
+
 export class CardSearchMethods {
   /**
-   * Constructor - Initializes the search methods with dependencies
-   * @param {Object} cacheManager - Handles caching of API responses
-   * @param {Object} retryHandler - Handles retry logic for failed API calls
-   * @param {Function} logAPICall - Logs API calls for monitoring
+   * @param {Object} cacheManager
+   * @param {Object} retryHandler
+   * @param {Function} logAPICall
+   * @param {CardPricingMethods} pricingMethods
+   * @param {SetMethods} setMethods
    */
-  constructor(cacheManager, retryHandler, logAPICall) {
+  constructor(
+    cacheManager,
+    retryHandler,
+    logAPICall,
+    pricingMethods,
+    setMethods,
+  ) {
     this.tcgdex = getTCGdexClient();
     this.cache = cacheManager;
     this.retryHandler = retryHandler;
     this.logAPICall = logAPICall;
-    this.pricingMethods = new CardPricingMethods(
-      cacheManager,
-      retryHandler,
-      logAPICall,
-    );
-    this.setMethods = this.setMethods;
+    this.pricingMethods = pricingMethods;
+    this.setMethods = setMethods;
   }
 
   async getCardByLocalId(localId) {
@@ -90,7 +90,6 @@ export class CardSearchMethods {
       if (canUseCache) {
         this.cache.set(cacheKey, card, 3600);
       }
-
       return card;
     } catch (error) {
       this.logAPICall(
@@ -118,7 +117,6 @@ export class CardSearchMethods {
 
           cardData.relatedSet = set;
           cardData.relatedSerie = serie;
-
           return cardData;
         },
         `getCardByFullId(${fullId})`,
@@ -134,6 +132,10 @@ export class CardSearchMethods {
     }
   }
 
+  /**
+   * Optimized search: pagination applied BEFORE expensive details/pricing,
+   * and pricing completely removed from search results.
+   */
   async searchCards(searchParams = {}) {
     const {
       name = "",
@@ -157,6 +159,7 @@ export class CardSearchMethods {
     try {
       const result = await this.retryHandler.withRetry(
         async () => {
+          // --- Build filters ---
           let query = Query.create();
 
           if (name && name.trim()) {
@@ -173,7 +176,6 @@ export class CardSearchMethods {
             const setInput = set.trim();
             const looksLikeId =
               /^[a-z]+\d/.test(setInput) || setInput.includes(".");
-
             if (looksLikeId) {
               query = query.equal("set.id", setInput);
             } else if (this.setMethods) {
@@ -198,81 +200,43 @@ export class CardSearchMethods {
 
           query = query.sort(sortBy, sortOrder);
 
-          const allMatches = await this.tcgdex.card.list(query);
+          // --- Fetch resume list (fast, no details) ---
+          const allResumes = await this.tcgdex.card.list(query);
 
+          // Apply localId filter early (on resumes)
+          let filteredResumes = allResumes;
           if (localId && localId.trim()) {
-            const filteredByLocalId = allMatches.filter(
+            filteredResumes = allResumes.filter(
               (card) => card.localId === localId.trim(),
             );
-
-            const totalCount = filteredByLocalId.length;
-            const start = (page - 1) * pageSize;
-            const end = start + pageSize;
-            const paginatedMatches = filteredByLocalId.slice(start, end);
-
-            const fullCards = await Promise.all(
-              paginatedMatches.map(async (resume) => {
-                try {
-                  const fullCard = await resume.getCard();
-                  const set = await fullCard.getSet();
-                  const serie = set ? await set.getSerie() : null;
-
-                  if (serie && serie.name === "Pokémon TCG Pocket") {
-                    return null;
-                  }
-
-                  const pricingResult =
-                    await this.pricingMethods.fetchCardWithPricing(fullCard.id);
-                  return {
-                    fullCard,
-                    pricingData: pricingResult.pricing,
-                    hasPricing: pricingResult.hasPricing,
-                    relatedSet: set,
-                    relatedSerie: serie,
-                  };
-                } catch (error) {
-                  return {
-                    fullCard: resume,
-                    pricingData: null,
-                    hasPricing: false,
-                    relatedSet: null,
-                    relatedSerie: null,
-                  };
-                }
-              }),
-            );
-
-            const filteredFullCards = fullCards.filter((card) => card !== null);
-            const transformedCards = filteredFullCards.map((cardData) =>
-              this.transformCardData(cardData),
-            );
-
-            return {
-              data: transformedCards,
-              page,
-              pageSize,
-              total: totalCount,
-              hasMore: page * pageSize < totalCount,
-            };
           }
 
-          const fullCardsWithDetails = await Promise.all(
-            allMatches.map(async (resume) => {
+          // Total estimate (before Pocket removal – slight overcount)
+          const totalEstimate = filteredResumes.length;
+
+          // Paginate first – only fetch details for the current page
+          const start = (page - 1) * pageSize;
+          const end = start + pageSize;
+          const pageResumes = filteredResumes.slice(start, end);
+
+          // Fetch full details only for the 5–20 cards on this page
+          const fullCards = await Promise.all(
+            pageResumes.map(async (resume) => {
               try {
                 const fullCard = await resume.getCard();
                 const set = await fullCard.getSet();
                 const serie = set ? await set.getSerie() : null;
 
+                // Exclude Pokémon TCG Pocket
                 if (serie && serie.name === "Pokémon TCG Pocket") {
                   return null;
                 }
 
-                const pricingResult =
-                  await this.pricingMethods.fetchCardWithPricing(fullCard.id);
+                // NO pricing – speed
                 return {
                   fullCard,
-                  pricingData: pricingResult.pricing,
-                  hasPricing: pricingResult.hasPricing,
+                  pricingData: null,
+                  hasPricing: false,
                   relatedSet: set,
                   relatedSerie: serie,
                 };
@@ -288,16 +252,8 @@ export class CardSearchMethods {
             }),
           );
 
-          const filteredCards = fullCardsWithDetails.filter(
-            (card) => card !== null,
-          );
-          const totalCount = filteredCards.length;
-
-          const start = (page - 1) * pageSize;
-          const end = start + pageSize;
-          const paginatedCards = filteredCards.slice(start, end);
-
-          const transformedCards = paginatedCards.map((cardData) =>
+          const filteredCards = fullCards.filter((card) => card !== null);
+          const transformedCards = filteredCards.map((cardData) =>
             this.transformCardData(cardData),
           );
 
@@ -305,8 +261,8 @@ export class CardSearchMethods {
             data: transformedCards,
             page,
             pageSize,
-            total: totalCount,
-            hasMore: page * pageSize < totalCount,
+            total: totalEstimate,
+            hasMore: end < totalEstimate,
           };
         },
         "searchCards",
@@ -412,32 +368,43 @@ export class CardSearchMethods {
     };
   }
 
-  async getCardsByType(type) {
-    const cacheKey = `type:${type}`;
+  async getCardsByType(type, page = 1, pageSize = 20) {
+    const cacheKey = `type:${type}:${page}:${pageSize}`;
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
     try {
-      const cards = await this.retryHandler.withRetry(
+      const result = await this.retryHandler.withRetry(
         async () => {
           const query = Query.create()
             .contains("types", [type])
-            .sort("localId", "ASC");
+            .sort("localId", "ASC")
+            .paginate(page, pageSize);
 
           const cardResumes = await this.tcgdex.card.list(query);
-
           const fullCards = await Promise.all(
-            cardResumes.map((resume) => resume.getCard()),
+            cardResumes.map(async (resume) => {
+              const fullCard = await resume.getCard();
+              return {
+                id: fullCard.id,
+                localId: fullCard.localId,
+                name: fullCard.name,
+                number: fullCard.number,
+                image: fullCard.getImageURL?.("high", "webp"),
+                types: fullCard.types,
+                hp: fullCard.hp,
+                rarity: fullCard.rarity,
+              };
+            }),
           );
-
           return fullCards;
         },
         `getCardsByType(${type})`,
-        { type },
+        { type, page, pageSize },
       );
 
-      this.cache.set(cacheKey, cards, 3600);
-      return cards;
+      this.cache.set(cacheKey, result, 3600);
+      return result;
     } catch (error) {
       this.logAPICall("getCardsByType", { type }, false, 0, error);
       throw error;
@@ -455,13 +422,10 @@ export class CardSearchMethods {
           const query = Query.create()
             .equal("hp", parseInt(hp))
             .sort("localId", "ASC");
-
           const cardResumes = await this.tcgdex.card.list(query);
-
           const fullCards = await Promise.all(
             cardResumes.map((resume) => resume.getCard()),
           );
-
           return fullCards;
         },
         `getCardsByHp(${hp})`,
@@ -487,13 +451,10 @@ export class CardSearchMethods {
           const query = Query.create()
             .equal("rarity", rarity)
             .sort("localId", "ASC");
-
           const cardResumes = await this.tcgdex.card.list(query);
-
           const fullCards = await Promise.all(
             cardResumes.map((resume) => resume.getCard()),
           );
-
           return fullCards;
         },
         `getCardsByRarity(${rarity})`,

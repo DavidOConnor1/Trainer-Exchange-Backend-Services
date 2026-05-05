@@ -57,7 +57,7 @@ class PokemonAPI {
     // Initialize utilities
     this.cache = new CacheManager(300, 500);
     this.retryHandler = new RetryHandler(3, 1000);
-    this.circuitBreaker = new CircuitBreaker(3, 30000);
+    this.circuitBreaker = new CircuitBreaker(10, 10000);
     this.searchBulkhead = new Bulkhead("search", 5, 10);
     this.cardBulkhead = new Bulkhead("card", 10, 20);
     this.optimizedCache = new OptimizedCache(300, 500);

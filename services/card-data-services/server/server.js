@@ -114,6 +114,7 @@ const allowedOrigins =
   process.env.NODE_ENV === "production"
     ? [process.env.CORS_ORIGIN].filter(Boolean)
     : [
+        "https://trainer-exchange.vercel.app/",
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",

@@ -1,11 +1,16 @@
 import express from "express";
 import { cardController } from "../controllers/cardController.js";
 import { validateLocalId, validateCardId } from "../middleware/validation.js";
+import { pricingLimiter } from "../middleware/rateLimit.js";
 
 const router = express.Router();
 
 // Full‑ID pricing (e.g., /api/cards/id/swsh3-136/pricing)
-router.get("/id/:fullId/pricing", cardController.getCardPricingByFullId);
+router.get(
+  "/id/:fullId/pricing",
+  pricingLimiter,
+  cardController.getCardPricingByFullId,
+);
 
 // User‑facing routes (using localId)
 router.get("/:localId", validateLocalId, cardController.getCardByLocalId);

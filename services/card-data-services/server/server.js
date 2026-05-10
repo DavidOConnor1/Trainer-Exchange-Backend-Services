@@ -112,9 +112,13 @@ app.use(
 // CORS configuration
 const allowedOrigins =
   process.env.NODE_ENV === "production"
-    ? [process.env.CORS_ORIGIN].filter(Boolean)
+    ? [
+        process.env.CORS_ORIGIN || "https://trainer-exchange.vercel.app",
+        "https://trainer-exchange.vercel.app", // fallback
+      ]
+        .filter(Boolean)
+        .map((origin) => origin.replace(/\/$/, "")) // remove trailing slashes
     : [
-        "https://trainer-exchange.vercel.app/",
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
@@ -124,9 +128,12 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+      // Normalise origin by removing trailing slash
+      const normalisedOrigin = origin.replace(/\/$/, "");
+      if (allowedOrigins.includes(normalisedOrigin)) {
         callback(null, true);
       } else {
+        console.error(`❌ CORS blocked origin: ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },

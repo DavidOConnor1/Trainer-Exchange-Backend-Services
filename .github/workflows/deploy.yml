@@ -60,7 +60,7 @@ jobs:
           echo "PORT=5001" > .env
           echo "JWT_API_KEY_SECRET=test-secret-key" >> .env
           echo "NODE_ENV=test" >> .env
-          echo "CORS_ORIGIN=https://trainer-exchange.vercel.app/" >> .env
+          echo "CORS_ORIGIN=https://trainer-exchange.vercel.app" >> .env
           echo "RATE_LIMIT_WINDOW_MS=900000" >> .env
           echo "RATE_LIMIT_MAX=100" >> .env
       - name: Install dependencies

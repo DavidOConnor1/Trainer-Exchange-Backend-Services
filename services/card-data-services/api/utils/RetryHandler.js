@@ -14,7 +14,7 @@ export class RetryHandler {
     // Never retry client errors (4xx)
     if (statusCode && statusCode >= 400 && statusCode < 500) return false;
 
-    // Never retry data errors - these won't fix themselves
+    // Never retry data errors
     if (message.includes("Cannot read properties of null")) return false;
     if (message.includes("not found")) return false;
     if (message.toLowerCase().includes("no card")) return false;
@@ -35,9 +35,12 @@ export class RetryHandler {
       console.log(`❌ ${context} failed:`, error.message, error.status);
 
       if (retries > 0 && this.shouldRetry(error)) {
-        const delay = this.retryDelay * (this.maxRetries - retries + 1);
-        console.log(`🔄 Retrying in ${delay}ms... (${retries} attempts left)`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        const baseDelay = this.retryDelay * (this.maxRetries - retries + 1);
+        const jitter = baseDelay * (0.8 + Math.random() * 0.4); // ±20% jitter
+        console.log(
+          `🔄 Retrying in ${Math.round(jitter)}ms... (${retries} attempts left)`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, jitter));
         return this.withRetry(fn, context, params, retries - 1);
       }
 
